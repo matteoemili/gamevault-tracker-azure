@@ -19,7 +19,7 @@ export function GameCard({ game, onEdit, onDelete, categories }: GameCardProps) 
     if (price === undefined || price === 0) {
       return 'Untracked';
     }
-    return `$${price.toFixed(2)}`;
+    return `£${price.toFixed(2)}`;
   };
 
   const category = categories.find(c => c.id === game.platform);
@@ -53,7 +53,7 @@ export function GameCard({ game, onEdit, onDelete, categories }: GameCardProps) 
 
           <div className="text-sm space-y-1 text-muted-foreground">
             {!game.acquired && game.targetPrice !== undefined && (
-              <div>Target Price: ${game.targetPrice.toFixed(2)}</div>
+              <div>Target Price: £{game.targetPrice.toFixed(2)}</div>
             )}
             
             {game.acquired && (
