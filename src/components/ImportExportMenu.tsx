@@ -294,114 +294,116 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
           </DialogHeader>
 
           <div className="space-y-4 flex-1 min-h-0 flex flex-col">
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="relative flex-1">
-                <MagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
-                <Input
-                  placeholder="Search games..."
-                  value={importSearchQuery}
-                  onChange={(e) => setImportSearchQuery(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-              
-              <div className="flex gap-2">
-                <Button
-                  variant={importStatusFilter === 'all' ? 'default' : 'outline'}
-                  onClick={() => setImportStatusFilter('all')}
-                  size="sm"
-                >
-                  All
-                </Button>
-                <Button
-                  variant={importStatusFilter === 'owned' ? 'default' : 'outline'}
-                  onClick={() => setImportStatusFilter('owned')}
-                  size="sm"
-                >
-                  Owned
-                </Button>
-                <Button
-                  variant={importStatusFilter === 'wanted' ? 'default' : 'outline'}
-                  onClick={() => setImportStatusFilter('wanted')}
-                  size="sm"
-                >
-                  Wanted
-                </Button>
-              </div>
-            </div>
-
-            {duplicateGames.size > 0 && (
-              <div className="flex flex-wrap gap-2 items-center">
-                <span className="text-sm text-muted-foreground">Show:</span>
-                <Button
-                  variant={importDuplicateFilter === 'all' ? 'default' : 'outline'}
-                  onClick={() => setImportDuplicateFilter('all')}
-                  size="sm"
-                >
-                  All
-                </Button>
-                <Button
-                  variant={importDuplicateFilter === 'new' ? 'default' : 'outline'}
-                  onClick={() => setImportDuplicateFilter('new')}
-                  size="sm"
-                >
-                  New Only ({pendingGames.length - duplicateGames.size})
-                </Button>
-                <Button
-                  variant={importDuplicateFilter === 'duplicates' ? 'default' : 'outline'}
-                  onClick={() => setImportDuplicateFilter('duplicates')}
-                  size="sm"
-                  className="text-amber-600 dark:text-amber-500 border-amber-300 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950"
-                >
-                  <Warning className="mr-1" size={16} weight="fill" />
-                  Duplicates ({duplicateGames.size})
-                </Button>
-              </div>
-            )}
-
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant={importPlatformFilter === 'all' ? 'default' : 'outline'}
-                onClick={() => setImportPlatformFilter('all')}
-                size="sm"
-              >
-                All ({importPlatformCounts.all})
-              </Button>
-              {categories.map((category) => {
-                const count = importPlatformCounts[category.id] || 0;
-                if (count === 0) return null;
-                return (
+            <div className="relative z-10 space-y-4">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-1">
+                  <MagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
+                  <Input
+                    placeholder="Search games..."
+                    value={importSearchQuery}
+                    onChange={(e) => setImportSearchQuery(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+                
+                <div className="flex gap-2">
                   <Button
-                    key={category.id}
-                    variant={importPlatformFilter === category.id ? 'default' : 'outline'}
-                    onClick={() => setImportPlatformFilter(category.id)}
+                    variant={importStatusFilter === 'all' ? 'default' : 'outline'}
+                    onClick={() => setImportStatusFilter('all')}
                     size="sm"
                   >
-                    {category.name} ({count})
+                    All
                   </Button>
-                );
-              })}
-            </div>
-
-            <div className="flex justify-between items-center pb-2 border-b">
-              <div className="text-sm text-muted-foreground">
-                {filteredImportGames.length} {filteredImportGames.length === 1 ? 'game' : 'games'} shown
+                  <Button
+                    variant={importStatusFilter === 'owned' ? 'default' : 'outline'}
+                    onClick={() => setImportStatusFilter('owned')}
+                    size="sm"
+                  >
+                    Owned
+                  </Button>
+                  <Button
+                    variant={importStatusFilter === 'wanted' ? 'default' : 'outline'}
+                    onClick={() => setImportStatusFilter('wanted')}
+                    size="sm"
+                  >
+                    Wanted
+                  </Button>
+                </div>
               </div>
-              <div className="flex gap-2">
+
+              {duplicateGames.size > 0 && (
+                <div className="flex flex-wrap gap-2 items-center">
+                  <span className="text-sm text-muted-foreground">Show:</span>
+                  <Button
+                    variant={importDuplicateFilter === 'all' ? 'default' : 'outline'}
+                    onClick={() => setImportDuplicateFilter('all')}
+                    size="sm"
+                  >
+                    All
+                  </Button>
+                  <Button
+                    variant={importDuplicateFilter === 'new' ? 'default' : 'outline'}
+                    onClick={() => setImportDuplicateFilter('new')}
+                    size="sm"
+                  >
+                    New Only ({pendingGames.length - duplicateGames.size})
+                  </Button>
+                  <Button
+                    variant={importDuplicateFilter === 'duplicates' ? 'default' : 'outline'}
+                    onClick={() => setImportDuplicateFilter('duplicates')}
+                    size="sm"
+                    className="text-amber-600 dark:text-amber-500 border-amber-300 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950"
+                  >
+                    <Warning className="mr-1" size={16} weight="fill" />
+                    Duplicates ({duplicateGames.size})
+                  </Button>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-2">
                 <Button
-                  variant="ghost"
+                  variant={importPlatformFilter === 'all' ? 'default' : 'outline'}
+                  onClick={() => setImportPlatformFilter('all')}
                   size="sm"
-                  onClick={handleSelectAllImport}
                 >
-                  Select All
+                  All ({importPlatformCounts.all})
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleSelectNoneImport}
-                >
-                  Select None
-                </Button>
+                {categories.map((category) => {
+                  const count = importPlatformCounts[category.id] || 0;
+                  if (count === 0) return null;
+                  return (
+                    <Button
+                      key={category.id}
+                      variant={importPlatformFilter === category.id ? 'default' : 'outline'}
+                      onClick={() => setImportPlatformFilter(category.id)}
+                      size="sm"
+                    >
+                      {category.name} ({count})
+                    </Button>
+                  );
+                })}
+              </div>
+
+              <div className="flex justify-between items-center pb-2 border-b">
+                <div className="text-sm text-muted-foreground">
+                  {filteredImportGames.length} {filteredImportGames.length === 1 ? 'game' : 'games'} shown
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleSelectAllImport}
+                  >
+                    Select All
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleSelectNoneImport}
+                  >
+                    Select None
+                  </Button>
+                </div>
               </div>
             </div>
 
