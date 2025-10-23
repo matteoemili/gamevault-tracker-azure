@@ -118,13 +118,33 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
       }
 
       if (importedGames.length > 0) {
+        const duplicateIds = new Set<string>();
+        importedGames.forEach(pendingGame => {
+          const isDuplicate = games.some(
+            existingGame => 
+              existingGame.name.toLowerCase() === pendingGame.name.toLowerCase() &&
+              existingGame.platform === pendingGame.platform
+          );
+          if (isDuplicate) {
+            duplicateIds.add(pendingGame.id);
+          }
+        });
+
+        const nonDuplicateIds = importedGames
+          .filter(g => !duplicateIds.has(g.id))
+          .map(g => g.id);
+
         setPendingGames(importedGames);
-        setSelectedGameIds(new Set(importedGames.map(g => g.id)));
+        setSelectedGameIds(new Set(nonDuplicateIds));
         setImportSearchQuery('');
         setImportPlatformFilter('all');
         setImportStatusFilter('all');
         setImportDuplicateFilter('all');
         setShowImportDialog(true);
+
+        if (duplicateIds.size > 0) {
+          toast.info(`${duplicateIds.size} duplicate${duplicateIds.size !== 1 ? 's' : ''} automatically deselected`);
+        }
       } else {
         toast.error('No valid games found in CSV');
       }
