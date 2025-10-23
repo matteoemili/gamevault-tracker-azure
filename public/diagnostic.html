@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Azure Storage Connection Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1000px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button {
+            background: #0078d4;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 5px;
+        }
+        button:hover {
+            background: #106ebe;
+        }
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .success {
+            background: #dff6dd;
+            border-left: 4px solid #28a745;
+        }
+        .error {
+            background: #f8d7da;
+            border-left: 4px solid #dc3545;
+        }
+        .info {
+            background: #d1ecf1;
+            border-left: 4px solid #0c5460;
+        }
+        pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        input {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        h1 {
+            color: #333;
+        }
+        h2 {
+            color: #555;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 Azure Table Storage Connection Test</h1>
+    <p>This page helps diagnose connection issues with Azure Table Storage.</p>
+
+    <div class="test-section">
+        <h2>Configuration</h2>
+        <label>Account Name:</label>
+        <input type="text" id="accountName" value="stvgcollection" />
+        
+        <label>SAS Token:</label>
+        <input type="text" id="sasToken" placeholder="sv=2024-11-04&ss=t..." />
+        
+        <label>Table Name:</label>
+        <input type="text" id="tableName" value="games" />
+        
+        <button onclick="saveConfig()">💾 Save Config</button>
+        <button onclick="loadFromEnv()">📋 Load from Environment</button>
+    </div>
+
+    <div class="test-section">
+        <h2>1. Test CORS Configuration</h2>
+        <p>Checks if CORS is properly configured for this domain.</p>
+        <button onclick="testCORS()">▶️ Test CORS</button>
+        <div id="corsResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>2. Test Authentication</h2>
+        <p>Verifies that your SAS token is valid and has correct permissions.</p>
+        <button onclick="testAuth()">▶️ Test Authentication</button>
+        <div id="authResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>3. Test Query Operation (Read)</h2>
+        <p>Attempts to read entities from the table.</p>
+        <button onclick="testQuery()">▶️ Test Query</button>
+        <div id="queryResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>4. Test Upsert Operation (Write)</h2>
+        <p>Attempts to write a test entity to the table.</p>
+        <button onclick="testUpsert()">▶️ Test Upsert</button>
+        <button onclick="cleanupTest()">🧹 Cleanup Test Data</button>
+        <div id="upsertResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>5. Performance Test</h2>
+        <p>Measures latency for Azure Table Storage operations.</p>
+        <button onclick="testPerformance()">▶️ Run Performance Test</button>
+        <div id="perfResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>6. Full Integration Test</h2>
+        <p>Simulates adding and retrieving games like the real app.</p>
+        <button onclick="testIntegration()">▶️ Run Integration Test</button>
+        <div id="integrationResult"></div>
+    </div>
+
+    <script>
+        function getConfig() {
+            return {
+                accountName: document.getElementById('accountName').value,
+                sasToken: document.getElementById('sasToken').value,
+                tableName: document.getElementById('tableName').value
+            };
+        }
+
+        function saveConfig() {
+            const config = getConfig();
+            localStorage.setItem('azureTestConfig', JSON.stringify(config));
+            showResult('configResult', 'Configuration saved to browser storage', 'success');
+        }
+
+        function loadFromEnv() {
+            const accountName = import.meta?.env?.VITE_AZURE_STORAGE_ACCOUNT_NAME;
+            const sasToken = import.meta?.env?.VITE_AZURE_STORAGE_SAS_TOKEN;
+            
+            if (accountName) document.getElementById('accountName').value = accountName;
+            if (sasToken) document.getElementById('sasToken').value = sasToken;
+            
+            showResult('authResult', `Loaded from environment: ${accountName ? '✅' : '❌'}`, accountName ? 'success' : 'error');
+        }
+
+        function getTableUrl(config, partitionKey, rowKey) {
+            let url = `https://${config.accountName}.table.core.windows.net/${config.tableName}`;
+            if (partitionKey && rowKey) {
+                url += `(PartitionKey='${encodeURIComponent(partitionKey)}',RowKey='${encodeURIComponent(rowKey)}')`;
+            }
+            url += `?${config.sasToken.startsWith('?') ? config.sasToken.substring(1) : config.sasToken}`;
+            return url;
+        }
+
+        function showResult(elementId, message, type) {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<div class="result ${type}"><pre>${message}</pre></div>`;
+        }
+
+        async function testCORS() {
+            const config = getConfig();
+            showResult('corsResult', 'Testing CORS configuration...', 'info');
+            
+            try {
+                const url = getTableUrl(config);
+                const response = await fetch(url, {
+                    method: 'OPTIONS',
+                    headers: {
+                        'Access-Control-Request-Method': 'GET',
+                        'Access-Control-Request-Headers': 'x-ms-version,accept',
+                        'Origin': window.location.origin
+                    }
+                });
+                
+                const corsHeaders = {
+                    'access-control-allow-origin': response.headers.get('access-control-allow-origin'),
+                    'access-control-allow-methods': response.headers.get('access-control-allow-methods'),
+                    'access-control-allow-headers': response.headers.get('access-control-allow-headers'),
+                };
+                
+                const result = `✅ CORS Test Result:\nStatus: ${response.status}\nCORS Headers:\n${JSON.stringify(corsHeaders, null, 2)}`;
+                showResult('corsResult', result, 'success');
+            } catch (error) {
+                showResult('corsResult', `❌ CORS Test Failed:\n${error.message}\n\nThis usually means CORS is not configured for: ${window.location.origin}`, 'error');
+            }
+        }
+
+        async function testAuth() {
+            const config = getConfig();
+            showResult('authResult', 'Testing authentication...', 'info');
+            
+            try {
+                const url = getTableUrl(config);
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json;odata=nometadata',
+                        'x-ms-version': '2024-11-04'
+                    }
+                });
+                
+                if (response.ok) {
+                    showResult('authResult', `✅ Authentication Successful!\nStatus: ${response.status}\nSAS token is valid and has correct permissions.`, 'success');
+                } else {
+                    const errorText = await response.text();
+                    showResult('authResult', `❌ Authentication Failed:\nStatus: ${response.status}\nError: ${errorText}`, 'error');
+                }
+            } catch (error) {
+                showResult('authResult', `❌ Authentication Test Failed:\n${error.message}`, 'error');
+            }
+        }
+
+        async function testQuery() {
+            const config = getConfig();
+            showResult('queryResult', 'Querying entities...', 'info');
+            
+            try {
+                const startTime = Date.now();
+                const url = getTableUrl(config);
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json;odata=nometadata',
+                        'x-ms-version': '2024-11-04'
+                    }
+                });
+                const duration = Date.now() - startTime;
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const entities = data.value || [];
+                    showResult('queryResult', `✅ Query Successful!\nFound ${entities.length} entities\nLatency: ${duration}ms\n\nFirst 3 entities:\n${JSON.stringify(entities.slice(0, 3), null, 2)}`, 'success');
+                } else {
+                    const errorText = await response.text();
+                    showResult('queryResult', `❌ Query Failed:\nStatus: ${response.status}\nError: ${errorText}\nLatency: ${duration}ms`, 'error');
+                }
+            } catch (error) {
+                showResult('queryResult', `❌ Query Test Failed:\n${error.message}`, 'error');
+            }
+        }
+
+        async function testUpsert() {
+            const config = getConfig();
+            showResult('upsertResult', 'Testing upsert operation...', 'info');
+            
+            const testEntity = {
+                PartitionKey: 'test',
+                RowKey: 'diagnostic-test-' + Date.now(),
+                data: JSON.stringify({
+                    id: 'test-game-' + Date.now(),
+                    name: 'Test Game',
+                    platform: 'PS1',
+                    acquired: false
+                })
+            };
+            
+            try {
+                const startTime = Date.now();
+                const url = getTableUrl(config, testEntity.PartitionKey, testEntity.RowKey);
+                const response = await fetch(url, {
+                    method: 'PUT',
+                    headers: {
+                        'Accept': 'application/json;odata=nometadata',
+                        'Content-Type': 'application/json',
+                        'x-ms-version': '2024-11-04'
+                    },
+                    body: JSON.stringify(testEntity)
+                });
+                const duration = Date.now() - startTime;
+                
+                if (response.ok || response.status === 204) {
+                    showResult('upsertResult', `✅ Upsert Successful!\nStatus: ${response.status}\nLatency: ${duration}ms\nEntity: ${testEntity.RowKey}\n\nYou can cleanup this test data using the Cleanup button.`, 'success');
+                } else {
+                    const errorText = await response.text();
+                    showResult('upsertResult', `❌ Upsert Failed:\nStatus: ${response.status}\nError: ${errorText}\nLatency: ${duration}ms`, 'error');
+                }
+            } catch (error) {
+                showResult('upsertResult', `❌ Upsert Test Failed:\n${error.message}`, 'error');
+            }
+        }
+
+        async function cleanupTest() {
+            const config = getConfig();
+            showResult('upsertResult', 'Cleaning up test data...', 'info');
+            
+            try {
+                // Query for test entities
+                const queryUrl = getTableUrl(config) + `&$filter=PartitionKey eq 'test'`;
+                const queryResponse = await fetch(queryUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json;odata=nometadata',
+                        'x-ms-version': '2024-11-04'
+                    }
+                });
+                
+                if (!queryResponse.ok) {
+                    throw new Error('Failed to query test entities');
+                }
+                
+                const data = await queryResponse.json();
+                const testEntities = data.value || [];
+                
+                // Delete each test entity
+                for (const entity of testEntities) {
+                    const deleteUrl = getTableUrl(config, entity.PartitionKey, entity.RowKey);
+                    await fetch(deleteUrl, {
+                        method: 'DELETE',
+                        headers: {
+                            'Accept': 'application/json;odata=nometadata',
+                            'x-ms-version': '2024-11-04',
+                            'If-Match': '*'
+                        }
+                    });
+                }
+                
+                showResult('upsertResult', `✅ Cleanup Complete!\nDeleted ${testEntities.length} test entities.`, 'success');
+            } catch (error) {
+                showResult('upsertResult', `❌ Cleanup Failed:\n${error.message}`, 'error');
+            }
+        }
+
+        async function testPerformance() {
+            const config = getConfig();
+            showResult('perfResult', 'Running performance tests...', 'info');
+            
+            try {
+                const tests = [];
+                
+                // Test 1: Query latency
+                const queryStart = Date.now();
+                await fetch(getTableUrl(config), {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json;odata=nometadata',
+                        'x-ms-version': '2024-11-04'
+                    }
+                });
+                const queryLatency = Date.now() - queryStart;
+                tests.push(`Query latency: ${queryLatency}ms`);
+                
+                // Test 2: Upsert latency
+                const upsertStart = Date.now();
+                const testEntity = {
+                    PartitionKey: 'test',
+                    RowKey: 'perf-test-' + Date.now(),
+                    data: JSON.stringify({ test: true })
+                };
+                await fetch(getTableUrl(config, testEntity.PartitionKey, testEntity.RowKey), {
+                    method: 'PUT',
+                    headers: {
+                        'Accept': 'application/json;odata=nometadata',
+                        'Content-Type': 'application/json',
+                        'x-ms-version': '2024-11-04'
+                    },
+                    body: JSON.stringify(testEntity)
+                });
+                const upsertLatency = Date.now() - upsertStart;
+                tests.push(`Upsert latency: ${upsertLatency}ms`);
+                
+                // Test 3: Multiple operations
+                const multiStart = Date.now();
+                const promises = [];
+                for (let i = 0; i < 5; i++) {
+                    const entity = {
+                        PartitionKey: 'test',
+                        RowKey: 'multi-test-' + Date.now() + '-' + i,
+                        data: JSON.stringify({ test: true, index: i })
+                    };
+                    promises.push(
+                        fetch(getTableUrl(config, entity.PartitionKey, entity.RowKey), {
+                            method: 'PUT',
+                            headers: {
+                                'Accept': 'application/json;odata=nometadata',
+                                'Content-Type': 'application/json',
+                                'x-ms-version': '2024-11-04'
+                            },
+                            body: JSON.stringify(entity)
+                        })
+                    );
+                }
+                await Promise.all(promises);
+                const multiLatency = Date.now() - multiStart;
+                tests.push(`5 parallel upserts: ${multiLatency}ms (${(multiLatency/5).toFixed(1)}ms avg)`);
+                
+                const result = `✅ Performance Test Results:\n\n${tests.join('\n')}\n\n${queryLatency > 1000 || upsertLatency > 2000 ? '⚠️ High latency detected. This may cause issues in production.' : '✅ Latency looks good!'}`;
+                showResult('perfResult', result, queryLatency > 1000 ? 'error' : 'success');
+            } catch (error) {
+                showResult('perfResult', `❌ Performance Test Failed:\n${error.message}`, 'error');
+            }
+        }
+
+        async function testIntegration() {
+            const config = getConfig();
+            showResult('integrationResult', 'Running full integration test...', 'info');
+            
+            const log = [];
+            
+            try {
+                // Step 1: Add a game
+                log.push('Step 1: Adding a test game...');
+                const gameId = 'integration-test-' + Date.now();
+                const gameEntity = {
+                    PartitionKey: 'default',
+                    RowKey: gameId,
+                    data: JSON.stringify({
+                        id: gameId,
+                        name: 'Integration Test Game',
+                        platform: 'PS2',
+                        acquired: true,
+                        purchasePrice: 29.99
+                    })
+                };
+                
+                const upsertResponse = await fetch(getTableUrl(config, gameEntity.PartitionKey, gameEntity.RowKey), {
+                    method: 'PUT',
+                    headers: {
+                        'Accept': 'application/json;odata=nometadata',
+                        'Content-Type': 'application/json',
+                        'x-ms-version': '2024-11-04'
+                    },
+                    body: JSON.stringify(gameEntity)
+                });
+                
+                if (!upsertResponse.ok) {
+                    throw new Error(`Failed to add game: ${upsertResponse.status}`);
+                }
+                log.push('✅ Game added successfully');
+                
+                // Step 2: Wait a bit (simulate user action)
+                log.push('Step 2: Waiting 1 second...');
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                log.push('✅ Wait complete');
+                
+                // Step 3: Query to verify it was saved
+                log.push('Step 3: Querying to verify save...');
+                const queryResponse = await fetch(getTableUrl(config) + `&$filter=PartitionKey eq 'default' and RowKey eq '${gameId}'`, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json;odata=nometadata',
+                        'x-ms-version': '2024-11-04'
+                    }
+                });
+                
+                if (!queryResponse.ok) {
+                    throw new Error(`Failed to query: ${queryResponse.status}`);
+                }
+                
+                const data = await queryResponse.json();
+                const entities = data.value || [];
+                
+                if (entities.length === 0) {
+                    throw new Error('❌ CRITICAL: Game was NOT found after save! This is the bug.');
+                }
+                
+                log.push(`✅ Game found! Data: ${entities[0].data}`);
+                
+                // Step 4: Cleanup
+                log.push('Step 4: Cleaning up test data...');
+                await fetch(getTableUrl(config, gameEntity.PartitionKey, gameEntity.RowKey), {
+                    method: 'DELETE',
+                    headers: {
+                        'Accept': 'application/json;odata=nometadata',
+                        'x-ms-version': '2024-11-04',
+                        'If-Match': '*'
+                    }
+                });
+                log.push('✅ Cleanup complete');
+                
+                showResult('integrationResult', `✅ Integration Test PASSED!\n\n${log.join('\n')}\n\n✅ All operations completed successfully. Data persists correctly.`, 'success');
+            } catch (error) {
+                log.push(`❌ ERROR: ${error.message}`);
+                showResult('integrationResult', `❌ Integration Test FAILED!\n\n${log.join('\n')}`, 'error');
+            }
+        }
+
+        // Auto-load saved config
+        window.onload = () => {
+            const saved = localStorage.getItem('azureTestConfig');
+            if (saved) {
+                const config = JSON.parse(saved);
+                document.getElementById('accountName').value = config.accountName || '';
+                document.getElementById('sasToken').value = config.sasToken || '';
+                document.getElementById('tableName').value = config.tableName || 'games';
+            }
+            
+            // Try to load from environment
+            loadFromEnv();
+        };
+    </script>
+</body>
+</html>
