@@ -94,5 +94,8 @@
         "packages": [
             "packages/*"
         ]
+    },
+    "engines": {
+        "node": "20.x"
     }
 }
