@@ -222,6 +222,15 @@ export class AzureTableStorageService {
 
     if (!response.ok) {
       const errorText = await response.text();
+      console.error(`[Azure Storage] Upsert failed:`, {
+        status: response.status,
+        statusText: response.statusText,
+        tableName,
+        partitionKey: entity.PartitionKey,
+        rowKey: entity.RowKey,
+        errorText,
+        url: url.split('?')[0], // Don't log SAS token
+      });
       throw new Error(`Failed to upsert entity: ${response.status} ${errorText}`);
     }
   }

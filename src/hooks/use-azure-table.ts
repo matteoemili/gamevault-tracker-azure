@@ -218,15 +218,15 @@ export function useAzureTableList<T extends { id: string }>(
 
   // Save data to Azure
   const setData = useCallback(
-    async (value: T[] | ((prev: T[]) => T[])) => {
-      // Use the updater function pattern to get current state
+    (value: T[] | ((prev: T[]) => T[])) => {
       setDataState((currentData) => {
         const newValue = typeof value === 'function' 
           ? (value as (prev: T[]) => T[])(currentData)
           : value;
 
-        // Perform async save operation
-        (async () => {
+        // Perform async save operation - don't await in setState
+        // but ensure it completes
+        const saveOperation = async () => {
           try {
             const service = getAzureService();
             
@@ -245,23 +245,39 @@ export function useAzureTableList<T extends { id: string }>(
               }
             }
 
-            // Upsert new/updated items
+            // Upsert new/updated items in parallel for better performance
             console.log(`[Azure] Upserting ${newValue.length} items`);
-            for (const item of newValue) {
-              const itemId = getItemId(item);
-              await service.upsertEntity<AzureEntity<T>>(tableName, {
-                PartitionKey: partitionKey,
-                RowKey: itemId,
-                data: JSON.stringify(item),
-              });
-            }
+            const startTime = Date.now();
             
-            console.log(`[Azure] Successfully saved data to ${tableName}`);
+            // Process all upserts in parallel
+            await Promise.all(
+              newValue.map(async (item) => {
+                const itemId = getItemId(item);
+                return service.upsertEntity<AzureEntity<T>>(tableName, {
+                  PartitionKey: partitionKey,
+                  RowKey: itemId,
+                  data: JSON.stringify(item),
+                });
+              })
+            );
+            
+            const duration = Date.now() - startTime;
+            console.log(`[Azure] Successfully saved data to ${tableName} (took ${duration}ms)`);
           } catch (err) {
             console.error('[Azure] Failed to save data to Azure Table Storage:', err);
+            console.error('[Azure] Error details:', {
+              message: err instanceof Error ? err.message : 'Unknown error',
+              tableName,
+              partitionKey,
+              itemCount: newValue.length,
+            });
             setError(err instanceof Error ? err : new Error('Failed to save data'));
+            // Don't revert optimistic update to avoid losing user data
           }
-        })();
+        };
+
+        // Start the save operation
+        saveOperation();
 
         return newValue;
       });
