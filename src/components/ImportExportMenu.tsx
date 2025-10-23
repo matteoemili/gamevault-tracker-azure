@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { DotsThree, DownloadSimple, UploadSimple, Tag, MagnifyingGlass, Star } from '@phosphor-icons/react';
+import { DotsThree, DownloadSimple, UploadSimple, Tag, MagnifyingGlass, Star, Warning } from '@phosphor-icons/react';
 import { generateBlankCSV, exportGamesToCSV, parseCSV, downloadCSV } from '@/lib/csv';
 import { Game } from '@/lib/types';
 import { toast } from 'sonner';
@@ -44,6 +44,7 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
   const [importSearchQuery, setImportSearchQuery] = useState('');
   const [importPlatformFilter, setImportPlatformFilter] = useState<string>('all');
   const [importStatusFilter, setImportStatusFilter] = useState<'all' | 'owned' | 'wanted'>('all');
+  const [importDuplicateFilter, setImportDuplicateFilter] = useState<'all' | 'duplicates' | 'new'>('all');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDownloadTemplate = () => {
@@ -122,6 +123,7 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
         setImportSearchQuery('');
         setImportPlatformFilter('all');
         setImportStatusFilter('all');
+        setImportDuplicateFilter('all');
         setShowImportDialog(true);
       } else {
         toast.error('No valid games found in CSV');
@@ -132,6 +134,21 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
     e.target.value = '';
   };
 
+  const duplicateGames = useMemo(() => {
+    const duplicateIds = new Set<string>();
+    pendingGames.forEach(pendingGame => {
+      const isDuplicate = games.some(
+        existingGame => 
+          existingGame.name.toLowerCase() === pendingGame.name.toLowerCase() &&
+          existingGame.platform === pendingGame.platform
+      );
+      if (isDuplicate) {
+        duplicateIds.add(pendingGame.id);
+      }
+    });
+    return duplicateIds;
+  }, [pendingGames, games]);
+
   const filteredImportGames = useMemo(() => {
     return pendingGames.filter(game => {
       const matchesSearch = game.name.toLowerCase().includes(importSearchQuery.toLowerCase());
@@ -141,9 +158,14 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
         (importStatusFilter === 'owned' && game.acquired) ||
         (importStatusFilter === 'wanted' && !game.acquired);
       
-      return matchesSearch && matchesPlatform && matchesStatus;
+      const matchesDuplicate = 
+        importDuplicateFilter === 'all' ||
+        (importDuplicateFilter === 'duplicates' && duplicateGames.has(game.id)) ||
+        (importDuplicateFilter === 'new' && !duplicateGames.has(game.id));
+      
+      return matchesSearch && matchesPlatform && matchesStatus && matchesDuplicate;
     });
-  }, [pendingGames, importSearchQuery, importPlatformFilter, importStatusFilter]);
+  }, [pendingGames, importSearchQuery, importPlatformFilter, importStatusFilter, importDuplicateFilter, duplicateGames]);
 
   const importPlatformCounts = useMemo(() => {
     const counts: Record<string, number> = { all: pendingGames.length };
@@ -183,9 +205,17 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
 
   const confirmImport = () => {
     const gamesToImport = pendingGames.filter(g => selectedGameIds.has(g.id));
+    const duplicatesInSelection = gamesToImport.filter(g => duplicateGames.has(g.id)).length;
+    
     if (gamesToImport.length > 0) {
       onImport(gamesToImport);
-      toast.success(`Imported ${gamesToImport.length} ${gamesToImport.length === 1 ? 'game' : 'games'}`);
+      if (duplicatesInSelection > 0) {
+        toast.success(`Imported ${gamesToImport.length} ${gamesToImport.length === 1 ? 'game' : 'games'}`, {
+          description: `${duplicatesInSelection} duplicate${duplicatesInSelection !== 1 ? 's' : ''} included`
+        });
+      } else {
+        toast.success(`Imported ${gamesToImport.length} ${gamesToImport.length === 1 ? 'game' : 'games'}`);
+      }
     }
     setShowImportDialog(false);
     setPendingGames([]);
@@ -235,6 +265,11 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
             <DialogTitle>Import Games</DialogTitle>
             <DialogDescription>
               Review and select games to import. {selectedGameIds.size} of {pendingGames.length} games selected.
+              {duplicateGames.size > 0 && (
+                <span className="block mt-1 text-amber-600 dark:text-amber-500">
+                  {duplicateGames.size} duplicate{duplicateGames.size !== 1 ? 's' : ''} detected
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
 
@@ -274,6 +309,35 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
                 </Button>
               </div>
             </div>
+
+            {duplicateGames.size > 0 && (
+              <div className="flex flex-wrap gap-2 items-center">
+                <span className="text-sm text-muted-foreground">Show:</span>
+                <Button
+                  variant={importDuplicateFilter === 'all' ? 'default' : 'outline'}
+                  onClick={() => setImportDuplicateFilter('all')}
+                  size="sm"
+                >
+                  All
+                </Button>
+                <Button
+                  variant={importDuplicateFilter === 'new' ? 'default' : 'outline'}
+                  onClick={() => setImportDuplicateFilter('new')}
+                  size="sm"
+                >
+                  New Only ({pendingGames.length - duplicateGames.size})
+                </Button>
+                <Button
+                  variant={importDuplicateFilter === 'duplicates' ? 'default' : 'outline'}
+                  onClick={() => setImportDuplicateFilter('duplicates')}
+                  size="sm"
+                  className="text-amber-600 dark:text-amber-500 border-amber-300 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950"
+                >
+                  <Warning className="mr-1" size={16} weight="fill" />
+                  Duplicates ({duplicateGames.size})
+                </Button>
+              </div>
+            )}
 
             <div className="flex flex-wrap gap-2">
               <Button
@@ -325,10 +389,13 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
               <div className="space-y-2 pr-4">
                 {filteredImportGames.map((game) => {
                   const category = categories.find(c => c.id === game.platform);
+                  const isDuplicate = duplicateGames.has(game.id);
                   return (
                     <div
                       key={game.id}
-                      className="flex items-start gap-3 p-3 border rounded-lg hover:bg-muted/50 transition-colors"
+                      className={`flex items-start gap-3 p-3 border rounded-lg hover:bg-muted/50 transition-colors ${
+                        isDuplicate ? 'border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/20' : ''
+                      }`}
                     >
                       <Checkbox
                         id={`import-game-${game.id}`}
@@ -337,12 +404,20 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
                         className="mt-1"
                       />
                       <div className="flex-1 min-w-0">
-                        <Label
-                          htmlFor={`import-game-${game.id}`}
-                          className="font-medium cursor-pointer text-base block mb-1"
-                        >
-                          {game.name}
-                        </Label>
+                        <div className="flex items-start gap-2 mb-1">
+                          <Label
+                            htmlFor={`import-game-${game.id}`}
+                            className="font-medium cursor-pointer text-base flex-1"
+                          >
+                            {game.name}
+                          </Label>
+                          {isDuplicate && (
+                            <Badge variant="outline" className="bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700 flex items-center gap-1 flex-shrink-0">
+                              <Warning size={12} weight="fill" />
+                              Duplicate
+                            </Badge>
+                          )}
+                        </div>
                         <div className="flex flex-wrap gap-2 mb-2">
                           {game.acquired ? (
                             <Badge className="bg-primary text-primary-foreground text-xs">Owned</Badge>
