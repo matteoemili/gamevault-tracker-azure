@@ -1,5 +1,8 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -7,16 +10,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import {
   Dialog,
   DialogContent,
@@ -27,11 +20,12 @@ import {
 } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { DotsThree, DownloadSimple, UploadSimple, Tag } from '@phosphor-icons/react';
+import { DotsThree, DownloadSimple, UploadSimple, Tag, MagnifyingGlass, Star } from '@phosphor-icons/react';
 import { generateBlankCSV, exportGamesToCSV, parseCSV, downloadCSV } from '@/lib/csv';
 import { Game } from '@/lib/types';
 import { toast } from 'sonner';
 import { CategoryDialog, PlatformCategory } from './CategoryDialog';
+import { PlatformLogo } from './PlatformLogo';
 
 interface ImportExportMenuProps {
   games: Game[];
@@ -45,6 +39,11 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
   const [showCategoryDialog, setShowCategoryDialog] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
+  const [pendingGames, setPendingGames] = useState<Game[]>([]);
+  const [selectedGameIds, setSelectedGameIds] = useState<Set<string>>(new Set());
+  const [importSearchQuery, setImportSearchQuery] = useState('');
+  const [importPlatformFilter, setImportPlatformFilter] = useState<string>('all');
+  const [importStatusFilter, setImportStatusFilter] = useState<'all' | 'owned' | 'wanted'>('all');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDownloadTemplate = () => {
@@ -118,8 +117,12 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
       }
 
       if (importedGames.length > 0) {
+        setPendingGames(importedGames);
+        setSelectedGameIds(new Set(importedGames.map(g => g.id)));
+        setImportSearchQuery('');
+        setImportPlatformFilter('all');
+        setImportStatusFilter('all');
         setShowImportDialog(true);
-        (window as any).__pendingImport = importedGames;
       } else {
         toast.error('No valid games found in CSV');
       }
@@ -129,14 +132,64 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
     e.target.value = '';
   };
 
+  const filteredImportGames = useMemo(() => {
+    return pendingGames.filter(game => {
+      const matchesSearch = game.name.toLowerCase().includes(importSearchQuery.toLowerCase());
+      const matchesPlatform = importPlatformFilter === 'all' || game.platform === importPlatformFilter;
+      const matchesStatus = 
+        importStatusFilter === 'all' ||
+        (importStatusFilter === 'owned' && game.acquired) ||
+        (importStatusFilter === 'wanted' && !game.acquired);
+      
+      return matchesSearch && matchesPlatform && matchesStatus;
+    });
+  }, [pendingGames, importSearchQuery, importPlatformFilter, importStatusFilter]);
+
+  const importPlatformCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: pendingGames.length };
+    
+    categories.forEach(cat => {
+      counts[cat.id] = 0;
+    });
+    
+    pendingGames.forEach(game => {
+      if (counts[game.platform] !== undefined) {
+        counts[game.platform]++;
+      }
+    });
+    
+    return counts;
+  }, [pendingGames, categories]);
+
+  const handleToggleGame = (gameId: string) => {
+    setSelectedGameIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(gameId)) {
+        newSet.delete(gameId);
+      } else {
+        newSet.add(gameId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAllImport = () => {
+    setSelectedGameIds(new Set(filteredImportGames.map(g => g.id)));
+  };
+
+  const handleSelectNoneImport = () => {
+    setSelectedGameIds(new Set());
+  };
+
   const confirmImport = () => {
-    const pendingGames = (window as any).__pendingImport as Game[];
-    if (pendingGames) {
-      onImport(pendingGames);
-      toast.success(`Imported ${pendingGames.length} games`);
-      delete (window as any).__pendingImport;
+    const gamesToImport = pendingGames.filter(g => selectedGameIds.has(g.id));
+    if (gamesToImport.length > 0) {
+      onImport(gamesToImport);
+      toast.success(`Imported ${gamesToImport.length} ${gamesToImport.length === 1 ? 'game' : 'games'}`);
     }
     setShowImportDialog(false);
+    setPendingGames([]);
+    setSelectedGameIds(new Set());
   };
 
   return (
@@ -176,21 +229,170 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
         className="hidden"
       />
 
-      <AlertDialog open={showImportDialog} onOpenChange={setShowImportDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Import Games</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will add {((window as any).__pendingImport as Game[])?.length || 0} games to your collection.
-              Existing games will not be affected.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmImport}>Import</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Import Games</DialogTitle>
+            <DialogDescription>
+              Review and select games to import. {selectedGameIds.size} of {pendingGames.length} games selected.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 flex-1 min-h-0 flex flex-col">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <MagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
+                <Input
+                  placeholder="Search games..."
+                  value={importSearchQuery}
+                  onChange={(e) => setImportSearchQuery(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              
+              <div className="flex gap-2">
+                <Button
+                  variant={importStatusFilter === 'all' ? 'default' : 'outline'}
+                  onClick={() => setImportStatusFilter('all')}
+                  size="sm"
+                >
+                  All
+                </Button>
+                <Button
+                  variant={importStatusFilter === 'owned' ? 'default' : 'outline'}
+                  onClick={() => setImportStatusFilter('owned')}
+                  size="sm"
+                >
+                  Owned
+                </Button>
+                <Button
+                  variant={importStatusFilter === 'wanted' ? 'default' : 'outline'}
+                  onClick={() => setImportStatusFilter('wanted')}
+                  size="sm"
+                >
+                  Wanted
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant={importPlatformFilter === 'all' ? 'default' : 'outline'}
+                onClick={() => setImportPlatformFilter('all')}
+                size="sm"
+              >
+                All ({importPlatformCounts.all})
+              </Button>
+              {categories.map((category) => {
+                const count = importPlatformCounts[category.id] || 0;
+                if (count === 0) return null;
+                return (
+                  <Button
+                    key={category.id}
+                    variant={importPlatformFilter === category.id ? 'default' : 'outline'}
+                    onClick={() => setImportPlatformFilter(category.id)}
+                    size="sm"
+                  >
+                    {category.name} ({count})
+                  </Button>
+                );
+              })}
+            </div>
+
+            <div className="flex justify-between items-center pb-2 border-b">
+              <div className="text-sm text-muted-foreground">
+                {filteredImportGames.length} {filteredImportGames.length === 1 ? 'game' : 'games'} shown
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleSelectAllImport}
+                >
+                  Select All
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleSelectNoneImport}
+                >
+                  Select None
+                </Button>
+              </div>
+            </div>
+
+            <ScrollArea className="flex-1 -mx-6 px-6">
+              <div className="space-y-2 pr-4">
+                {filteredImportGames.map((game) => {
+                  const category = categories.find(c => c.id === game.platform);
+                  return (
+                    <div
+                      key={game.id}
+                      className="flex items-start gap-3 p-3 border rounded-lg hover:bg-muted/50 transition-colors"
+                    >
+                      <Checkbox
+                        id={`import-game-${game.id}`}
+                        checked={selectedGameIds.has(game.id)}
+                        onCheckedChange={() => handleToggleGame(game.id)}
+                        className="mt-1"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <Label
+                          htmlFor={`import-game-${game.id}`}
+                          className="font-medium cursor-pointer text-base block mb-1"
+                        >
+                          {game.name}
+                        </Label>
+                        <div className="flex flex-wrap gap-2 mb-2">
+                          {game.acquired ? (
+                            <Badge className="bg-primary text-primary-foreground text-xs">Owned</Badge>
+                          ) : (
+                            <Badge variant="secondary" className="text-xs">Wanted</Badge>
+                          )}
+                          {game.priority && !game.acquired && (
+                            <Badge className="bg-accent text-accent-foreground flex items-center gap-1 text-xs">
+                              <Star weight="fill" size={10} />
+                              Priority
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="text-sm text-muted-foreground space-y-0.5">
+                          {!game.acquired && game.targetPrice !== undefined && (
+                            <div>Target: ${game.targetPrice.toFixed(2)}</div>
+                          )}
+                          {game.acquired && game.purchasePrice !== undefined && game.purchasePrice > 0 && (
+                            <div>Purchase Price: ${game.purchasePrice.toFixed(2)}</div>
+                          )}
+                          {game.notes && (
+                            <div className="text-xs mt-1 line-clamp-2">{game.notes}</div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex-shrink-0">
+                        <PlatformLogo 
+                          platform={game.platform} 
+                          size="sm" 
+                          logoUrl={category?.logoUrl}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowImportDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmImport} disabled={selectedGameIds.size === 0}>
+              <UploadSimple className="mr-2" />
+              Import {selectedGameIds.size > 0 && `(${selectedGameIds.size})`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <CategoryDialog
         open={showCategoryDialog}
