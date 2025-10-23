@@ -15,7 +15,7 @@ interface GameCardProps {
 export function GameCard({ game, onEdit, onDelete }: GameCardProps) {
   const formatPrice = (price: number | undefined) => {
     if (price === undefined || price === 0) {
-      return 'Pre-owned/gifted/other';
+      return 'Untracked';
     }
     return `$${price.toFixed(2)}`;
   };
