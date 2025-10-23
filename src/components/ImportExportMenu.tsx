@@ -294,7 +294,7 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
           </DialogHeader>
 
           <div className="space-y-4 flex-1 min-h-0 flex flex-col">
-            <div className="relative z-10 space-y-4">
+            <div className="space-y-4 bg-background relative z-10 pb-2">
               <div className="flex flex-col sm:flex-row gap-3">
                 <div className="relative flex-1">
                   <MagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
@@ -407,7 +407,7 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
               </div>
             </div>
 
-            <ScrollArea className="flex-1 -mx-6 px-6">
+            <ScrollArea className="flex-1 -mx-6 px-6 relative z-0">
               <div className="space-y-2 pr-4">
                 {filteredImportGames.map((game) => {
                   const category = categories.find(c => c.id === game.platform);
@@ -479,7 +479,7 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
             </ScrollArea>
           </div>
 
-          <DialogFooter className="gap-2">
+          <DialogFooter className="gap-2 bg-background relative z-10 pt-4 border-t">
             <Button variant="outline" onClick={() => setShowImportDialog(false)}>
               Cancel
             </Button>
