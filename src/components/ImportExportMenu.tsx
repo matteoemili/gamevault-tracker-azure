@@ -280,8 +280,8 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
       />
 
       <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
-        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
-          <DialogHeader>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>Import Games</DialogTitle>
             <DialogDescription>
               Review and select games to import. {selectedGameIds.size} of {pendingGames.length} games selected.
@@ -293,193 +293,191 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 flex-1 min-h-0 flex flex-col">
-            <div className="space-y-4 bg-background relative z-10 pb-2">
-              <div className="flex flex-col sm:flex-row gap-3">
-                <div className="relative flex-1">
-                  <MagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
-                  <Input
-                    placeholder="Search games..."
-                    value={importSearchQuery}
-                    onChange={(e) => setImportSearchQuery(e.target.value)}
-                    className="pl-9"
-                  />
-                </div>
-                
-                <div className="flex gap-2">
-                  <Button
-                    variant={importStatusFilter === 'all' ? 'default' : 'outline'}
-                    onClick={() => setImportStatusFilter('all')}
-                    size="sm"
-                  >
-                    All
-                  </Button>
-                  <Button
-                    variant={importStatusFilter === 'owned' ? 'default' : 'outline'}
-                    onClick={() => setImportStatusFilter('owned')}
-                    size="sm"
-                  >
-                    Owned
-                  </Button>
-                  <Button
-                    variant={importStatusFilter === 'wanted' ? 'default' : 'outline'}
-                    onClick={() => setImportStatusFilter('wanted')}
-                    size="sm"
-                  >
-                    Wanted
-                  </Button>
-                </div>
+          <div className="space-y-4 flex-shrink-0 overflow-y-auto max-h-[200px]">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <MagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
+                <Input
+                  placeholder="Search games..."
+                  value={importSearchQuery}
+                  onChange={(e) => setImportSearchQuery(e.target.value)}
+                  className="pl-9"
+                />
               </div>
-
-              {duplicateGames.size > 0 && (
-                <div className="flex flex-wrap gap-2 items-center">
-                  <span className="text-sm text-muted-foreground">Show:</span>
-                  <Button
-                    variant={importDuplicateFilter === 'all' ? 'default' : 'outline'}
-                    onClick={() => setImportDuplicateFilter('all')}
-                    size="sm"
-                  >
-                    All
-                  </Button>
-                  <Button
-                    variant={importDuplicateFilter === 'new' ? 'default' : 'outline'}
-                    onClick={() => setImportDuplicateFilter('new')}
-                    size="sm"
-                  >
-                    New Only ({pendingGames.length - duplicateGames.size})
-                  </Button>
-                  <Button
-                    variant={importDuplicateFilter === 'duplicates' ? 'default' : 'outline'}
-                    onClick={() => setImportDuplicateFilter('duplicates')}
-                    size="sm"
-                    className="text-amber-600 dark:text-amber-500 border-amber-300 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950"
-                  >
-                    <Warning className="mr-1" size={16} weight="fill" />
-                    Duplicates ({duplicateGames.size})
-                  </Button>
-                </div>
-              )}
-
-              <div className="flex flex-wrap gap-2">
+              
+              <div className="flex gap-2 flex-shrink-0">
                 <Button
-                  variant={importPlatformFilter === 'all' ? 'default' : 'outline'}
-                  onClick={() => setImportPlatformFilter('all')}
+                  variant={importStatusFilter === 'all' ? 'default' : 'outline'}
+                  onClick={() => setImportStatusFilter('all')}
                   size="sm"
                 >
-                  All ({importPlatformCounts.all})
+                  All
                 </Button>
-                {categories.map((category) => {
-                  const count = importPlatformCounts[category.id] || 0;
-                  if (count === 0) return null;
-                  return (
-                    <Button
-                      key={category.id}
-                      variant={importPlatformFilter === category.id ? 'default' : 'outline'}
-                      onClick={() => setImportPlatformFilter(category.id)}
-                      size="sm"
-                    >
-                      {category.name} ({count})
-                    </Button>
-                  );
-                })}
-              </div>
-
-              <div className="flex justify-between items-center pb-2 border-b">
-                <div className="text-sm text-muted-foreground">
-                  {filteredImportGames.length} {filteredImportGames.length === 1 ? 'game' : 'games'} shown
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleSelectAllImport}
-                  >
-                    Select All
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleSelectNoneImport}
-                  >
-                    Select None
-                  </Button>
-                </div>
+                <Button
+                  variant={importStatusFilter === 'owned' ? 'default' : 'outline'}
+                  onClick={() => setImportStatusFilter('owned')}
+                  size="sm"
+                >
+                  Owned
+                </Button>
+                <Button
+                  variant={importStatusFilter === 'wanted' ? 'default' : 'outline'}
+                  onClick={() => setImportStatusFilter('wanted')}
+                  size="sm"
+                >
+                  Wanted
+                </Button>
               </div>
             </div>
 
-            <ScrollArea className="flex-1 -mx-6 px-6 relative z-0">
-              <div className="space-y-2 pr-4">
-                {filteredImportGames.map((game) => {
-                  const category = categories.find(c => c.id === game.platform);
-                  const isDuplicate = duplicateGames.has(game.id);
-                  return (
-                    <div
-                      key={game.id}
-                      className={`flex items-start gap-3 p-3 border rounded-lg hover:bg-muted/50 transition-colors ${
-                        isDuplicate ? 'border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/20' : ''
-                      }`}
-                    >
-                      <Checkbox
-                        id={`import-game-${game.id}`}
-                        checked={selectedGameIds.has(game.id)}
-                        onCheckedChange={() => handleToggleGame(game.id)}
-                        className="mt-1"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start gap-2 mb-1">
-                          <Label
-                            htmlFor={`import-game-${game.id}`}
-                            className="font-medium cursor-pointer text-base flex-1"
-                          >
-                            {game.name}
-                          </Label>
-                          {isDuplicate && (
-                            <Badge variant="outline" className="bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700 flex items-center gap-1 flex-shrink-0">
-                              <Warning size={12} weight="fill" />
-                              Duplicate
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap gap-2 mb-2">
-                          {game.acquired ? (
-                            <Badge className="bg-primary text-primary-foreground text-xs">Owned</Badge>
-                          ) : (
-                            <Badge variant="secondary" className="text-xs">Wanted</Badge>
-                          )}
-                          {game.priority && !game.acquired && (
-                            <Badge className="bg-accent text-accent-foreground flex items-center gap-1 text-xs">
-                              <Star weight="fill" size={10} />
-                              Priority
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="text-sm text-muted-foreground space-y-0.5">
-                          {!game.acquired && game.targetPrice !== undefined && (
-                            <div>Target: ${game.targetPrice.toFixed(2)}</div>
-                          )}
-                          {game.acquired && game.purchasePrice !== undefined && game.purchasePrice > 0 && (
-                            <div>Purchase Price: ${game.purchasePrice.toFixed(2)}</div>
-                          )}
-                          {game.notes && (
-                            <div className="text-xs mt-1 line-clamp-2">{game.notes}</div>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex-shrink-0">
-                        <PlatformLogo 
-                          platform={game.platform} 
-                          size="sm" 
-                          logoUrl={category?.logoUrl}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
+            {duplicateGames.size > 0 && (
+              <div className="flex flex-wrap gap-2 items-center">
+                <span className="text-sm text-muted-foreground flex-shrink-0">Show:</span>
+                <Button
+                  variant={importDuplicateFilter === 'all' ? 'default' : 'outline'}
+                  onClick={() => setImportDuplicateFilter('all')}
+                  size="sm"
+                >
+                  All
+                </Button>
+                <Button
+                  variant={importDuplicateFilter === 'new' ? 'default' : 'outline'}
+                  onClick={() => setImportDuplicateFilter('new')}
+                  size="sm"
+                >
+                  New Only ({pendingGames.length - duplicateGames.size})
+                </Button>
+                <Button
+                  variant={importDuplicateFilter === 'duplicates' ? 'default' : 'outline'}
+                  onClick={() => setImportDuplicateFilter('duplicates')}
+                  size="sm"
+                  className="text-amber-600 dark:text-amber-500 border-amber-300 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950"
+                >
+                  <Warning className="mr-1" size={16} weight="fill" />
+                  Duplicates ({duplicateGames.size})
+                </Button>
               </div>
-            </ScrollArea>
+            )}
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant={importPlatformFilter === 'all' ? 'default' : 'outline'}
+                onClick={() => setImportPlatformFilter('all')}
+                size="sm"
+              >
+                All ({importPlatformCounts.all})
+              </Button>
+              {categories.map((category) => {
+                const count = importPlatformCounts[category.id] || 0;
+                if (count === 0) return null;
+                return (
+                  <Button
+                    key={category.id}
+                    variant={importPlatformFilter === category.id ? 'default' : 'outline'}
+                    onClick={() => setImportPlatformFilter(category.id)}
+                    size="sm"
+                  >
+                    {category.name} ({count})
+                  </Button>
+                );
+              })}
+            </div>
+
+            <div className="flex justify-between items-center py-2 border-y">
+              <div className="text-sm text-muted-foreground">
+                {filteredImportGames.length} {filteredImportGames.length === 1 ? 'game' : 'games'} shown
+              </div>
+              <div className="flex gap-2 flex-shrink-0">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleSelectAllImport}
+                >
+                  Select All
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleSelectNoneImport}
+                >
+                  Select None
+                </Button>
+              </div>
+            </div>
           </div>
 
-          <DialogFooter className="gap-2 bg-background relative z-10 pt-4 border-t">
+          <ScrollArea className="h-[400px] -mx-6 px-6">
+            <div className="space-y-2 pr-4">
+              {filteredImportGames.map((game) => {
+                const category = categories.find(c => c.id === game.platform);
+                const isDuplicate = duplicateGames.has(game.id);
+                return (
+                  <div
+                    key={game.id}
+                    className={`flex items-start gap-3 p-3 border rounded-lg hover:bg-muted/50 transition-colors ${
+                      isDuplicate ? 'border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/20' : ''
+                    }`}
+                  >
+                    <Checkbox
+                      id={`import-game-${game.id}`}
+                      checked={selectedGameIds.has(game.id)}
+                      onCheckedChange={() => handleToggleGame(game.id)}
+                      className="mt-1"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start gap-2 mb-1">
+                        <Label
+                          htmlFor={`import-game-${game.id}`}
+                          className="font-medium cursor-pointer text-base flex-1"
+                        >
+                          {game.name}
+                        </Label>
+                        {isDuplicate && (
+                          <Badge variant="outline" className="bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700 flex items-center gap-1 flex-shrink-0">
+                            <Warning size={12} weight="fill" />
+                            Duplicate
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {game.acquired ? (
+                          <Badge className="bg-primary text-primary-foreground text-xs">Owned</Badge>
+                        ) : (
+                          <Badge variant="secondary" className="text-xs">Wanted</Badge>
+                        )}
+                        {game.priority && !game.acquired && (
+                          <Badge className="bg-accent text-accent-foreground flex items-center gap-1 text-xs">
+                            <Star weight="fill" size={10} />
+                            Priority
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="text-sm text-muted-foreground space-y-0.5">
+                        {!game.acquired && game.targetPrice !== undefined && (
+                          <div>Target: ${game.targetPrice.toFixed(2)}</div>
+                        )}
+                        {game.acquired && game.purchasePrice !== undefined && game.purchasePrice > 0 && (
+                          <div>Purchase Price: ${game.purchasePrice.toFixed(2)}</div>
+                        )}
+                        {game.notes && (
+                          <div className="text-xs mt-1 line-clamp-2">{game.notes}</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex-shrink-0">
+                      <PlatformLogo 
+                        platform={game.platform} 
+                        size="sm" 
+                        logoUrl={category?.logoUrl}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </ScrollArea>
+
+          <DialogFooter className="gap-2 pt-4 border-t flex-shrink-0">
             <Button variant="outline" onClick={() => setShowImportDialog(false)}>
               Cancel
             </Button>
