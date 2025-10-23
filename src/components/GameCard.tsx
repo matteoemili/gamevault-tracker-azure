@@ -32,7 +32,7 @@ export function GameCard({ game, onEdit, onDelete }: GameCardProps) {
               {game.acquired ? (
                 <Badge className="bg-primary text-primary-foreground">Owned</Badge>
               ) : (
-                <Badge variant="outline" className="border-accent text-accent-foreground">Wanted</Badge>
+                <Badge className="bg-secondary text-muted-foreground">Wanted</Badge>
               )}
               {game.priority && !game.acquired && (
                 <Badge className="bg-accent text-accent-foreground flex items-center gap-1">
