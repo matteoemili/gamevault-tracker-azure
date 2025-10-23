@@ -28,7 +28,14 @@ export function GameCard({ game, onEdit, onDelete, categories }: GameCardProps) 
     <Card className="p-6 hover:shadow-lg transition-shadow">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
-          <h3 className="font-medium text-base mb-2 break-words">{game.name}</h3>
+          <div className="flex items-center gap-3 mb-2">
+            <PlatformLogo 
+              platform={game.platform} 
+              size="md" 
+              logoUrl={category?.logoUrl}
+            />
+            <h3 className="font-medium text-base break-words">{game.name}</h3>
+          </div>
           
           <div className="flex flex-wrap gap-2 mb-3">
             {game.acquired ? (
@@ -67,28 +74,21 @@ export function GameCard({ game, onEdit, onDelete, categories }: GameCardProps) 
           </div>
         </div>
 
-        <div className="flex flex-col items-center gap-3 flex-shrink-0">
-          <PlatformLogo 
-            platform={game.platform} 
-            size="md" 
-            logoUrl={category?.logoUrl}
-          />
-          <div className="flex gap-2">
-            <Button
-              size="icon"
-              variant="outline"
-              onClick={() => onEdit(game)}
-            >
-              <Pencil />
-            </Button>
-            <Button
-              size="icon"
-              variant="outline"
-              onClick={() => onDelete(game.id)}
-            >
-              <Trash className="text-destructive" />
-            </Button>
-          </div>
+        <div className="flex gap-2 flex-shrink-0">
+          <Button
+            size="icon"
+            variant="outline"
+            onClick={() => onEdit(game)}
+          >
+            <Pencil />
+          </Button>
+          <Button
+            size="icon"
+            variant="outline"
+            onClick={() => onDelete(game.id)}
+          >
+            <Trash className="text-destructive" />
+          </Button>
         </div>
       </div>
     </Card>
