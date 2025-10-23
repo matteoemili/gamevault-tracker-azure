@@ -27,7 +27,7 @@ import {
 } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { DotsThree, DownloadSimple, UploadSimple, Tag, FunnelSimple } from '@phosphor-icons/react';
+import { DotsThree, DownloadSimple, UploadSimple, Tag } from '@phosphor-icons/react';
 import { generateBlankCSV, exportGamesToCSV, parseCSV, downloadCSV } from '@/lib/csv';
 import { Game } from '@/lib/types';
 import { toast } from 'sonner';
@@ -43,7 +43,7 @@ interface ImportExportMenuProps {
 export function ImportExportMenu({ games, onImport, categories, onCategoriesChange }: ImportExportMenuProps) {
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showCategoryDialog, setShowCategoryDialog] = useState(false);
-  const [showPartialExportDialog, setShowPartialExportDialog] = useState(false);
+  const [showExportDialog, setShowExportDialog] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -53,15 +53,9 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
     toast.success('Template downloaded');
   };
 
-  const handleExport = () => {
-    const csv = exportGamesToCSV(games);
-    downloadCSV(csv, `game-collection-${new Date().toISOString().split('T')[0]}.csv`);
-    toast.success(`Exported ${games.length} games`);
-  };
-
-  const handlePartialExportClick = () => {
+  const handleExportClick = () => {
     setSelectedCategories(new Set(categories.map(c => c.id)));
-    setShowPartialExportDialog(true);
+    setShowExportDialog(true);
   };
 
   const handleToggleCategory = (categoryId: string) => {
@@ -76,21 +70,32 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
     });
   };
 
-  const handlePartialExport = () => {
-    const filteredGames = games.filter(game => selectedCategories.has(game.platform));
+  const handleSelectAll = () => {
+    setSelectedCategories(new Set(categories.map(c => c.id)));
+  };
+
+  const handleSelectNone = () => {
+    setSelectedCategories(new Set());
+  };
+
+  const handleExport = () => {
+    const filteredGames = selectedCategories.size === categories.length
+      ? games
+      : games.filter(game => selectedCategories.has(game.platform));
+
     if (filteredGames.length === 0) {
       toast.error('No games to export with selected categories');
       return;
     }
     
     const csv = exportGamesToCSV(filteredGames);
-    const categoryNames = categories
-      .filter(c => selectedCategories.has(c.id))
-      .map(c => c.name)
-      .join('-');
-    downloadCSV(csv, `game-collection-${categoryNames}-${new Date().toISOString().split('T')[0]}.csv`);
-    toast.success(`Exported ${filteredGames.length} games`);
-    setShowPartialExportDialog(false);
+    const fileName = selectedCategories.size === categories.length
+      ? `game-collection-${new Date().toISOString().split('T')[0]}.csv`
+      : `game-collection-${categories.filter(c => selectedCategories.has(c.id)).map(c => c.name).join('-')}-${new Date().toISOString().split('T')[0]}.csv`;
+    
+    downloadCSV(csv, fileName);
+    toast.success(`Exported ${filteredGames.length} ${filteredGames.length === 1 ? 'game' : 'games'}`);
+    setShowExportDialog(false);
   };
 
   const handleImportClick = () => {
@@ -151,13 +156,9 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
             <UploadSimple className="mr-2" />
             Import CSV
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={handleExport} disabled={games.length === 0}>
+          <DropdownMenuItem onClick={handleExportClick} disabled={games.length === 0}>
             <DownloadSimple className="mr-2" />
-            Export All Games
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={handlePartialExportClick} disabled={games.length === 0}>
-            <FunnelSimple className="mr-2" />
-            Export by Category
+            Export Games
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setShowCategoryDialog(true)}>
@@ -198,16 +199,33 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
         onSave={onCategoriesChange}
       />
 
-      <Dialog open={showPartialExportDialog} onOpenChange={setShowPartialExportDialog}>
+      <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Export by Category</DialogTitle>
+            <DialogTitle>Export Games</DialogTitle>
             <DialogDescription>
               Select which categories to include in the export
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4 py-4">
+            <div className="flex justify-end gap-2 pb-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleSelectAll}
+              >
+                Select All
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleSelectNone}
+              >
+                Select None
+              </Button>
+            </div>
+            
             {categories.map((category) => {
               const count = games.filter(g => g.platform === category.id).length;
               return (
@@ -230,10 +248,10 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowPartialExportDialog(false)}>
+            <Button variant="outline" onClick={() => setShowExportDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handlePartialExport} disabled={selectedCategories.size === 0}>
+            <Button onClick={handleExport} disabled={selectedCategories.size === 0}>
               <DownloadSimple className="mr-2" />
               Export {selectedCategories.size > 0 && `(${games.filter(g => selectedCategories.has(g.platform)).length})`}
             </Button>
