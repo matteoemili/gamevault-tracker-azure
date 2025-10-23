@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
-import { useKV } from '@github/spark/hooks';
+import { useAzureTableList } from '@/hooks/use-azure-table';
+import { getAzureConfig } from '@/lib/azure-config';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -16,8 +17,15 @@ import { toast } from 'sonner';
 type StatusFilter = 'all' | 'owned' | 'wanted' | 'priority';
 
 function App() {
-  const [games, setGames] = useKV<Game[]>('game-collection', []);
-  const [categories, setCategories] = useKV<PlatformCategory[]>('platform-categories', DEFAULT_CATEGORIES);
+  const azureConfig = getAzureConfig();
+  const [games, setGames, gamesLoading] = useAzureTableList<Game>(
+    azureConfig.tables.games,
+    []
+  );
+  const [categories, setCategories, categoriesLoading] = useAzureTableList<PlatformCategory>(
+    azureConfig.tables.categories,
+    DEFAULT_CATEGORIES
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [platformFilter, setPlatformFilter] = useState<Platform | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
