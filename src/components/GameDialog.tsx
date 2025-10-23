@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,7 +8,8 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Game, Platform, PLATFORM_NAMES } from '@/lib/types';
+import { Game, Platform } from '@/lib/types';
+import { PlatformCategory } from './CategoryDialog';
 import { Calendar as CalendarIcon } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 
@@ -17,17 +18,27 @@ interface GameDialogProps {
   onOpenChange: (open: boolean) => void;
   onSave: (game: Game) => void;
   game?: Game;
+  categories: PlatformCategory[];
 }
 
-export function GameDialog({ open, onOpenChange, onSave, game }: GameDialogProps) {
+export function GameDialog({ open, onOpenChange, onSave, game, categories }: GameDialogProps) {
+  const defaultPlatform = categories.length > 0 ? categories[0].id : '';
   const [formData, setFormData] = useState<Partial<Game>>(
     game || {
       name: '',
-      platform: 'PS1',
+      platform: defaultPlatform,
       acquired: false,
       priority: false
     }
   );
+
+  useEffect(() => {
+    if (game) {
+      setFormData(game);
+    } else if (!formData.platform && defaultPlatform) {
+      setFormData(prev => ({ ...prev, platform: defaultPlatform }));
+    }
+  }, [game, defaultPlatform]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,7 +64,7 @@ export function GameDialog({ open, onOpenChange, onSave, game }: GameDialogProps
     if (!game) {
       setFormData({
         name: '',
-        platform: 'PS1',
+        platform: defaultPlatform,
         acquired: false,
         priority: false
       });
@@ -95,9 +106,9 @@ export function GameDialog({ open, onOpenChange, onSave, game }: GameDialogProps
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {Object.entries(PLATFORM_NAMES).map(([key, name]) => (
-                  <SelectItem key={key} value={key}>
-                    {name}
+                {categories.map((category) => (
+                  <SelectItem key={category.id} value={category.id}>
+                    {category.name}
                   </SelectItem>
                 ))}
               </SelectContent>

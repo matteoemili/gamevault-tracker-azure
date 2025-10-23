@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Game } from '@/lib/types';
 import { PlatformLogo } from './PlatformLogo';
+import { PlatformCategory } from './CategoryDialog';
 import { Pencil, Trash, Star } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 
@@ -10,15 +11,18 @@ interface GameCardProps {
   game: Game;
   onEdit: (game: Game) => void;
   onDelete: (id: string) => void;
+  categories: PlatformCategory[];
 }
 
-export function GameCard({ game, onEdit, onDelete }: GameCardProps) {
+export function GameCard({ game, onEdit, onDelete, categories }: GameCardProps) {
   const formatPrice = (price: number | undefined) => {
     if (price === undefined || price === 0) {
       return 'Untracked';
     }
     return `$${price.toFixed(2)}`;
   };
+
+  const category = categories.find(c => c.id === game.platform);
 
   return (
     <Card className="p-6 hover:shadow-lg transition-shadow">
@@ -64,7 +68,11 @@ export function GameCard({ game, onEdit, onDelete }: GameCardProps) {
         </div>
 
         <div className="flex flex-col items-center gap-3 flex-shrink-0">
-          <PlatformLogo platform={game.platform} size="md" />
+          <PlatformLogo 
+            platform={game.platform} 
+            size="md" 
+            logoUrl={category?.logoUrl}
+          />
           <div className="flex gap-2">
             <Button
               size="icon"

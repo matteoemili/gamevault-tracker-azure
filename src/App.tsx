@@ -7,6 +7,8 @@ import { Game, Platform, PLATFORM_NAMES } from '@/lib/types';
 import { GameCard } from '@/components/GameCard';
 import { GameDialog } from '@/components/GameDialog';
 import { ImportExportMenu } from '@/components/ImportExportMenu';
+import { PlatformCategory } from '@/components/CategoryDialog';
+import { DEFAULT_CATEGORIES } from '@/lib/categories';
 import { Plus, MagnifyingGlass, FunnelSimple } from '@phosphor-icons/react';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
@@ -15,6 +17,7 @@ type StatusFilter = 'all' | 'owned' | 'wanted' | 'priority';
 
 function App() {
   const [games, setGames] = useKV<Game[]>('game-collection', []);
+  const [categories, setCategories] = useKV<PlatformCategory[]>('platform-categories', DEFAULT_CATEGORIES);
   const [searchQuery, setSearchQuery] = useState('');
   const [platformFilter, setPlatformFilter] = useState<Platform | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -75,6 +78,11 @@ function App() {
     setGames(currentGames => [...(currentGames || []), ...importedGames]);
   };
 
+  const handleCategoriesChange = (newCategories: PlatformCategory[]) => {
+    setCategories(newCategories);
+    toast.success('Categories updated');
+  };
+
   const handleDialogClose = (open: boolean) => {
     setDialogOpen(open);
     if (!open) {
@@ -83,21 +91,23 @@ function App() {
   };
 
   const platformCounts = useMemo(() => {
-    const counts: Record<Platform | 'all', number> = {
-      all: games?.length || 0,
-      PS1: 0,
-      PS2: 0,
-      PS3: 0,
-      PSP: 0,
-      PC: 0
+    const categoryIds = (categories || DEFAULT_CATEGORIES).map(c => c.id);
+    const counts: Record<string, number> = {
+      all: games?.length || 0
     };
     
+    categoryIds.forEach(id => {
+      counts[id] = 0;
+    });
+    
     games?.forEach(game => {
-      counts[game.platform]++;
+      if (counts[game.platform] !== undefined) {
+        counts[game.platform]++;
+      }
     });
     
     return counts;
-  }, [games]);
+  }, [games, categories]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -108,7 +118,12 @@ function App() {
           <div className="flex items-center justify-between mb-6">
             <h1 className="text-4xl font-bold tracking-tight">Video Game Collection</h1>
             <div className="flex gap-2">
-              <ImportExportMenu games={games || []} onImport={handleImport} />
+              <ImportExportMenu 
+                games={games || []} 
+                onImport={handleImport}
+                categories={categories || DEFAULT_CATEGORIES}
+                onCategoriesChange={handleCategoriesChange}
+              />
               <Button onClick={handleAddNew}>
                 <Plus className="mr-2" />
                 Add Game
@@ -150,14 +165,14 @@ function App() {
               >
                 All ({platformCounts.all})
               </Button>
-              {Object.entries(PLATFORM_NAMES).map(([key, name]) => (
+              {(categories || DEFAULT_CATEGORIES).map((category) => (
                 <Button
-                  key={key}
-                  variant={platformFilter === key ? 'default' : 'outline'}
-                  onClick={() => setPlatformFilter(key as Platform)}
+                  key={category.id}
+                  variant={platformFilter === category.id ? 'default' : 'outline'}
+                  onClick={() => setPlatformFilter(category.id as Platform)}
                   size="sm"
                 >
-                  {name} ({platformCounts[key as Platform]})
+                  {category.name} ({platformCounts[category.id] || 0})
                 </Button>
               ))}
             </div>
@@ -205,6 +220,7 @@ function App() {
                   game={game}
                   onEdit={handleEditGame}
                   onDelete={handleDeleteGame}
+                  categories={categories || DEFAULT_CATEGORIES}
                 />
               ))}
             </div>
@@ -217,6 +233,7 @@ function App() {
         onOpenChange={handleDialogClose}
         onSave={handleSaveGame}
         game={editingGame}
+        categories={categories || DEFAULT_CATEGORIES}
       />
     </div>
   );

@@ -4,6 +4,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -16,18 +17,22 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { DotsThree, DownloadSimple, UploadSimple } from '@phosphor-icons/react';
+import { DotsThree, DownloadSimple, UploadSimple, Tag } from '@phosphor-icons/react';
 import { generateBlankCSV, exportGamesToCSV, parseCSV, downloadCSV } from '@/lib/csv';
 import { Game } from '@/lib/types';
 import { toast } from 'sonner';
+import { CategoryDialog, PlatformCategory } from './CategoryDialog';
 
 interface ImportExportMenuProps {
   games: Game[];
   onImport: (games: Game[]) => void;
+  categories: PlatformCategory[];
+  onCategoriesChange: (categories: PlatformCategory[]) => void;
 }
 
-export function ImportExportMenu({ games, onImport }: ImportExportMenuProps) {
+export function ImportExportMenu({ games, onImport, categories, onCategoriesChange }: ImportExportMenuProps) {
   const [showImportDialog, setShowImportDialog] = useState(false);
+  const [showCategoryDialog, setShowCategoryDialog] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDownloadTemplate = () => {
@@ -104,6 +109,11 @@ export function ImportExportMenu({ games, onImport }: ImportExportMenuProps) {
             <DownloadSimple className="mr-2" />
             Export Collection
           </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => setShowCategoryDialog(true)}>
+            <Tag className="mr-2" />
+            Manage Categories
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -130,6 +140,13 @@ export function ImportExportMenu({ games, onImport }: ImportExportMenuProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <CategoryDialog
+        open={showCategoryDialog}
+        onOpenChange={setShowCategoryDialog}
+        categories={categories}
+        onSave={onCategoriesChange}
+      />
     </>
   );
 }
