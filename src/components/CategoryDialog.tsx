@@ -22,49 +22,61 @@ interface CategoryDialogProps {
 export function CategoryDialog({ open, onOpenChange, categories, onSave }: CategoryDialogProps) {
   const [localCategories, setLocalCategories] = useState<PlatformCategory[]>(categories);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({ name: '', logoUrl: '' });
+  const [editForm, setEditForm] = useState({ id: '', name: '', logoUrl: '' });
 
   useEffect(() => {
     setLocalCategories(categories);
   }, [categories]);
 
   const handleAdd = () => {
-    if (!editForm.name.trim() || !editForm.logoUrl.trim()) {
+    if (!editForm.id.trim() || !editForm.name.trim() || !editForm.logoUrl.trim()) {
       toast.error('Please fill in all fields');
       return;
     }
 
+    // Check for duplicate shortform
+    if (localCategories.some(cat => cat.id === editForm.id.trim())) {
+      toast.error('Platform shortform already exists');
+      return;
+    }
+
     const newCategory: PlatformCategory = {
-      id: crypto.randomUUID(),
+      id: editForm.id.trim(),
       name: editForm.name.trim(),
       logoUrl: editForm.logoUrl.trim()
     };
 
     setLocalCategories(prev => [...prev, newCategory]);
-    setEditForm({ name: '', logoUrl: '' });
+    setEditForm({ id: '', name: '', logoUrl: '' });
     toast.success('Category added');
   };
 
   const handleEdit = (category: PlatformCategory) => {
     setEditingId(category.id);
-    setEditForm({ name: category.name, logoUrl: category.logoUrl });
+    setEditForm({ id: category.id, name: category.name, logoUrl: category.logoUrl });
   };
 
   const handleUpdate = () => {
-    if (!editForm.name.trim() || !editForm.logoUrl.trim()) {
+    if (!editForm.id.trim() || !editForm.name.trim() || !editForm.logoUrl.trim()) {
       toast.error('Please fill in all fields');
+      return;
+    }
+
+    // Check for duplicate shortform (excluding the current one being edited)
+    if (localCategories.some(cat => cat.id === editForm.id.trim() && cat.id !== editingId)) {
+      toast.error('Platform shortform already exists');
       return;
     }
 
     setLocalCategories(prev =>
       prev.map(cat =>
         cat.id === editingId
-          ? { ...cat, name: editForm.name.trim(), logoUrl: editForm.logoUrl.trim() }
+          ? { ...cat, id: editForm.id.trim(), name: editForm.name.trim(), logoUrl: editForm.logoUrl.trim() }
           : cat
       )
     );
     setEditingId(null);
-    setEditForm({ name: '', logoUrl: '' });
+    setEditForm({ id: '', name: '', logoUrl: '' });
     toast.success('Category updated');
   };
 
@@ -85,7 +97,7 @@ export function CategoryDialog({ open, onOpenChange, categories, onSave }: Categ
   const handleCancel = () => {
     setLocalCategories(categories);
     setEditingId(null);
-    setEditForm({ name: '', logoUrl: '' });
+    setEditForm({ id: '', name: '', logoUrl: '' });
     onOpenChange(false);
   };
 
@@ -101,7 +113,18 @@ export function CategoryDialog({ open, onOpenChange, categories, onSave }: Categ
             <h3 className="font-semibold text-sm">
               {editingId ? 'Edit Category' : 'Add New Category'}
             </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="category-shortform">Platform Shortform</Label>
+                <Input
+                  id="category-shortform"
+                  placeholder="e.g., PS4"
+                  value={editForm.id}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, id: e.target.value }))}
+                  disabled={!!editingId}
+                  title={editingId ? 'Shortform cannot be changed to maintain data compatibility' : 'Short identifier used in data storage'}
+                />
+              </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="category-name">Category Name</Label>
                 <Input
@@ -132,7 +155,7 @@ export function CategoryDialog({ open, onOpenChange, categories, onSave }: Categ
                     variant="outline"
                     onClick={() => {
                       setEditingId(null);
-                      setEditForm({ name: '', logoUrl: '' });
+                      setEditForm({ id: '', name: '', logoUrl: '' });
                     }}
                     size="sm"
                   >
@@ -169,7 +192,10 @@ export function CategoryDialog({ open, onOpenChange, categories, onSave }: Categ
                         (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="24" height="24"%3E%3Crect fill="%23ccc" width="24" height="24"/%3E%3C/svg%3E';
                       }}
                     />
-                    <span className="flex-1 font-medium">{category.name}</span>
+                    <div className="flex-1 flex flex-col">
+                      <span className="font-medium">{category.name}</span>
+                      <span className="text-xs text-muted-foreground">Shortform: {category.id}</span>
+                    </div>
                     <div className="flex gap-2">
                       <Button
                         size="icon"
