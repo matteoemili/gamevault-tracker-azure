@@ -34,21 +34,23 @@ function App() {
 
   const filteredGames = useMemo(() => {
     if (!games) return [];
-    return games.filter(game => {
-      const matchesSearch = game.name.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesPlatform = platformFilter === 'all' || game.platform === platformFilter;
-      
-      let matchesStatus = true;
-      if (statusFilter === 'owned') {
-        matchesStatus = game.acquired;
-      } else if (statusFilter === 'wanted') {
-        matchesStatus = !game.acquired;
-      } else if (statusFilter === 'priority') {
-        matchesStatus = !game.acquired && game.priority === true;
-      }
-      
-      return matchesSearch && matchesPlatform && matchesStatus;
-    });
+    return games
+      .filter(game => {
+        const matchesSearch = game.name.toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesPlatform = platformFilter === 'all' || game.platform === platformFilter;
+        
+        let matchesStatus = true;
+        if (statusFilter === 'owned') {
+          matchesStatus = game.acquired;
+        } else if (statusFilter === 'wanted') {
+          matchesStatus = !game.acquired;
+        } else if (statusFilter === 'priority') {
+          matchesStatus = !game.acquired && game.priority === true;
+        }
+        
+        return matchesSearch && matchesPlatform && matchesStatus;
+      })
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
   }, [games, searchQuery, platformFilter, statusFilter]);
 
   const handleSaveGame = (game: Game) => {
