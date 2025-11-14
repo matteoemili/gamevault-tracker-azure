@@ -1,0 +1,612 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "languageVersion": "2.0",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.38.33.27573",
+      "templateHash": "4442152256644877719"
+    }
+  },
+  "parameters": {
+    "environmentName": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 10,
+      "metadata": {
+        "description": "Environment name (e.g., dev, test, prod)"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Primary location for all resources"
+      }
+    },
+    "applicationName": {
+      "type": "string",
+      "defaultValue": "gamevault",
+      "metadata": {
+        "description": "Application name"
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {
+        "Application": "GameVault Tracker",
+        "ManagedBy": "Bicep"
+      },
+      "metadata": {
+        "description": "Tags to apply to all resources"
+      }
+    },
+    "storageAccountSku": {
+      "type": "string",
+      "defaultValue": "Standard_LRS",
+      "allowedValues": [
+        "Standard_LRS",
+        "Standard_GRS",
+        "Standard_ZRS"
+      ],
+      "metadata": {
+        "description": "Storage Account SKU"
+      }
+    },
+    "staticWebAppSku": {
+      "type": "string",
+      "defaultValue": "Free",
+      "allowedValues": [
+        "Free",
+        "Standard"
+      ],
+      "metadata": {
+        "description": "Static Web App SKU"
+      }
+    },
+    "repositoryUrl": {
+      "type": "string",
+      "defaultValue": "https://github.com/matteoemili/gamevault-tracker-azure",
+      "metadata": {
+        "description": "GitHub repository URL for Static Web App"
+      }
+    },
+    "repositoryBranch": {
+      "type": "string",
+      "defaultValue": "main",
+      "metadata": {
+        "description": "GitHub branch for deployment"
+      }
+    },
+    "repositoryToken": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "GitHub Personal Access Token for Static Web App deployment"
+      }
+    },
+    "tableNames": {
+      "type": "object",
+      "defaultValue": {
+        "games": "games",
+        "categories": "categories"
+      },
+      "metadata": {
+        "description": "Table names configuration"
+      }
+    },
+    "corsAllowedOrigins": {
+      "type": "array",
+      "defaultValue": [
+        "http://localhost:5173",
+        "http://localhost:5000"
+      ],
+      "metadata": {
+        "description": "CORS allowed origins (include your Static Web App URL after first deployment)"
+      }
+    }
+  },
+  "variables": {
+    "uniqueSuffix": "[uniqueString(resourceGroup().id, parameters('environmentName'))]",
+    "storageAccountName": "[toLower(format('st{0}{1}{2}', parameters('applicationName'), parameters('environmentName'), take(variables('uniqueSuffix'), 6)))]",
+    "staticWebAppName": "[format('{0}-{1}-{2}', parameters('applicationName'), parameters('environmentName'), take(variables('uniqueSuffix'), 6))]"
+  },
+  "resources": {
+    "storageAccount": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "storageAccountDeployment",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "storageAccountName": {
+            "value": "[variables('storageAccountName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "sku": {
+            "value": "[parameters('storageAccountSku')]"
+          },
+          "tags": {
+            "value": "[parameters('tags')]"
+          },
+          "tableNames": {
+            "value": [
+              "[parameters('tableNames').games]",
+              "[parameters('tableNames').categories]"
+            ]
+          },
+          "corsAllowedOrigins": {
+            "value": "[parameters('corsAllowedOrigins')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "languageVersion": "2.0",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.38.33.27573",
+              "templateHash": "13182455147786985963"
+            }
+          },
+          "parameters": {
+            "storageAccountName": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 24,
+              "metadata": {
+                "description": "Storage Account name (must be globally unique, 3-24 lowercase alphanumeric)"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for the storage account"
+              }
+            },
+            "sku": {
+              "type": "string",
+              "defaultValue": "Standard_LRS",
+              "allowedValues": [
+                "Standard_LRS",
+                "Standard_GRS",
+                "Standard_RAGRS",
+                "Standard_ZRS",
+                "Premium_LRS"
+              ],
+              "metadata": {
+                "description": "Storage Account SKU"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags to apply to the storage account"
+              }
+            },
+            "tableNames": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "List of table names to create"
+              }
+            },
+            "corsAllowedOrigins": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "CORS allowed origins for Table Storage"
+              }
+            },
+            "minimumTlsVersion": {
+              "type": "string",
+              "defaultValue": "TLS1_2",
+              "metadata": {
+                "description": "Minimum TLS version"
+              }
+            },
+            "sasTokenExpiryYears": {
+              "type": "int",
+              "defaultValue": 1,
+              "metadata": {
+                "description": "SAS token expiry duration in years"
+              }
+            },
+            "currentUtcTime": {
+              "type": "string",
+              "defaultValue": "[utcNow()]",
+              "metadata": {
+                "description": "Current UTC time (used for SAS token generation)"
+              }
+            }
+          },
+          "variables": {
+            "sasTokenExpiry": "[dateTimeAdd(parameters('currentUtcTime'), format('P{0}Y', parameters('sasTokenExpiryYears')))]"
+          },
+          "resources": {
+            "storageAccount": {
+              "type": "Microsoft.Storage/storageAccounts",
+              "apiVersion": "2023-01-01",
+              "name": "[parameters('storageAccountName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "[parameters('sku')]"
+              },
+              "kind": "StorageV2",
+              "properties": {
+                "minimumTlsVersion": "[parameters('minimumTlsVersion')]",
+                "allowBlobPublicAccess": false,
+                "supportsHttpsTrafficOnly": true,
+                "networkAcls": {
+                  "defaultAction": "Allow",
+                  "bypass": "AzureServices"
+                },
+                "encryption": {
+                  "services": {
+                    "table": {
+                      "enabled": true,
+                      "keyType": "Account"
+                    }
+                  },
+                  "keySource": "Microsoft.Storage"
+                }
+              }
+            },
+            "tableService": {
+              "type": "Microsoft.Storage/storageAccounts/tableServices",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}', parameters('storageAccountName'), 'default')]",
+              "properties": {
+                "cors": {
+                  "copy": [
+                    {
+                      "name": "corsRules",
+                      "count": "[length(parameters('corsAllowedOrigins'))]",
+                      "input": {
+                        "allowedOrigins": [
+                          "[parameters('corsAllowedOrigins')[copyIndex('corsRules')]]"
+                        ],
+                        "allowedMethods": [
+                          "GET",
+                          "POST",
+                          "PUT",
+                          "DELETE",
+                          "OPTIONS"
+                        ],
+                        "allowedHeaders": [
+                          "*"
+                        ],
+                        "exposedHeaders": [
+                          "*"
+                        ],
+                        "maxAgeInSeconds": 3600
+                      }
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "storageAccount"
+              ]
+            },
+            "tables": {
+              "copy": {
+                "name": "tables",
+                "count": "[length(parameters('tableNames'))]"
+              },
+              "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+              "apiVersion": "2023-01-01",
+              "name": "[format('{0}/{1}/{2}', parameters('storageAccountName'), 'default', parameters('tableNames')[copyIndex()])]",
+              "dependsOn": [
+                "tableService"
+              ]
+            }
+          },
+          "outputs": {
+            "storageAccountName": {
+              "type": "string",
+              "metadata": {
+                "description": "Storage Account name"
+              },
+              "value": "[parameters('storageAccountName')]"
+            },
+            "storageAccountId": {
+              "type": "string",
+              "metadata": {
+                "description": "Storage Account resource ID"
+              },
+              "value": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+            },
+            "primaryEndpoints": {
+              "type": "object",
+              "metadata": {
+                "description": "Storage Account primary endpoints"
+              },
+              "value": "[reference('storageAccount').primaryEndpoints]"
+            },
+            "tableEndpoint": {
+              "type": "string",
+              "metadata": {
+                "description": "Table Storage endpoint"
+              },
+              "value": "[reference('storageAccount').primaryEndpoints.table]"
+            },
+            "connectionString": {
+              "type": "securestring",
+              "metadata": {
+                "description": "Storage Account connection string (sensitive - handle securely)"
+              },
+              "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys('storageAccount', '2023-01-01').keys[0].value, environment().suffixes.storage)]"
+            },
+            "primaryKey": {
+              "type": "securestring",
+              "metadata": {
+                "description": "Storage Account primary key (sensitive - handle securely)"
+              },
+              "value": "[listKeys('storageAccount', '2023-01-01').keys[0].value]"
+            },
+            "sasToken": {
+              "type": "securestring",
+              "metadata": {
+                "description": "SAS token for Table Storage (sensitive - handle securely)"
+              },
+              "value": "[listAccountSas('storageAccount', '2023-01-01', createObject('signedServices', 't', 'signedResourceTypes', 'sco', 'signedPermission', 'rwdlacu', 'signedExpiry', variables('sasTokenExpiry'), 'signedProtocol', 'https')).accountSasToken]"
+            }
+          }
+        }
+      }
+    },
+    "staticWebApp": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "staticWebAppDeployment",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "staticWebAppName": {
+            "value": "[variables('staticWebAppName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "sku": {
+            "value": "[parameters('staticWebAppSku')]"
+          },
+          "tags": {
+            "value": "[parameters('tags')]"
+          },
+          "repositoryUrl": {
+            "value": "[parameters('repositoryUrl')]"
+          },
+          "repositoryBranch": {
+            "value": "[parameters('repositoryBranch')]"
+          },
+          "repositoryToken": {
+            "value": "[parameters('repositoryToken')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "languageVersion": "2.0",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.38.33.27573",
+              "templateHash": "2984604878290763665"
+            }
+          },
+          "parameters": {
+            "staticWebAppName": {
+              "type": "string",
+              "metadata": {
+                "description": "Static Web App name"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for the Static Web App"
+              }
+            },
+            "sku": {
+              "type": "string",
+              "defaultValue": "Free",
+              "allowedValues": [
+                "Free",
+                "Standard"
+              ],
+              "metadata": {
+                "description": "Static Web App SKU"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags to apply to the Static Web App"
+              }
+            },
+            "repositoryUrl": {
+              "type": "string",
+              "metadata": {
+                "description": "GitHub repository URL"
+              }
+            },
+            "repositoryBranch": {
+              "type": "string",
+              "metadata": {
+                "description": "GitHub branch for deployment"
+              }
+            },
+            "repositoryToken": {
+              "type": "securestring",
+              "metadata": {
+                "description": "GitHub Personal Access Token for deployment"
+              }
+            },
+            "buildProperties": {
+              "type": "object",
+              "defaultValue": {
+                "appLocation": "/",
+                "apiLocation": "",
+                "outputLocation": "dist",
+                "appBuildCommand": "npm run build"
+              },
+              "metadata": {
+                "description": "App build configuration"
+              }
+            }
+          },
+          "resources": {
+            "staticWebApp": {
+              "type": "Microsoft.Web/staticSites",
+              "apiVersion": "2023-01-01",
+              "name": "[parameters('staticWebAppName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "[parameters('sku')]",
+                "tier": "[parameters('sku')]"
+              },
+              "properties": {
+                "repositoryUrl": "[parameters('repositoryUrl')]",
+                "branch": "[parameters('repositoryBranch')]",
+                "repositoryToken": "[parameters('repositoryToken')]",
+                "buildProperties": "[parameters('buildProperties')]",
+                "provider": "GitHub"
+              }
+            }
+          },
+          "outputs": {
+            "staticWebAppName": {
+              "type": "string",
+              "metadata": {
+                "description": "Static Web App name"
+              },
+              "value": "[parameters('staticWebAppName')]"
+            },
+            "staticWebAppId": {
+              "type": "string",
+              "metadata": {
+                "description": "Static Web App resource ID"
+              },
+              "value": "[resourceId('Microsoft.Web/staticSites', parameters('staticWebAppName'))]"
+            },
+            "defaultHostname": {
+              "type": "string",
+              "metadata": {
+                "description": "Static Web App default hostname"
+              },
+              "value": "[reference('staticWebApp').defaultHostname]"
+            },
+            "customDomains": {
+              "type": "array",
+              "metadata": {
+                "description": "Static Web App custom domains"
+              },
+              "value": "[reference('staticWebApp').customDomains]"
+            },
+            "deploymentToken": {
+              "type": "securestring",
+              "metadata": {
+                "description": "Static Web App deployment token (sensitive - handle securely)"
+              },
+              "value": "[listSecrets('staticWebApp', '2023-01-01').properties.apiKey]"
+            }
+          }
+        }
+      }
+    }
+  },
+  "outputs": {
+    "storageAccountName": {
+      "type": "string",
+      "metadata": {
+        "description": "Storage Account name"
+      },
+      "value": "[reference('storageAccount').outputs.storageAccountName.value]"
+    },
+    "storageTableEndpoint": {
+      "type": "string",
+      "metadata": {
+        "description": "Storage Account endpoint for Table service"
+      },
+      "value": "[reference('storageAccount').outputs.tableEndpoint.value]"
+    },
+    "storageConnectionString": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Storage Account connection string (sensitive - handle securely)"
+      },
+      "value": "[listOutputsWithSecureValues('storageAccount', '2025-04-01').connectionString]"
+    },
+    "storageSasToken": {
+      "type": "securestring",
+      "metadata": {
+        "description": "SAS token for Table Storage access (sensitive - handle securely)"
+      },
+      "value": "[listOutputsWithSecureValues('storageAccount', '2025-04-01').sasToken]"
+    },
+    "staticWebAppName": {
+      "type": "string",
+      "metadata": {
+        "description": "Static Web App name"
+      },
+      "value": "[reference('staticWebApp').outputs.staticWebAppName.value]"
+    },
+    "staticWebAppUrl": {
+      "type": "string",
+      "metadata": {
+        "description": "Static Web App default hostname"
+      },
+      "value": "[reference('staticWebApp').outputs.defaultHostname.value]"
+    },
+    "staticWebAppDeploymentToken": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Static Web App deployment token (sensitive - handle securely)"
+      },
+      "value": "[listOutputsWithSecureValues('staticWebApp', '2025-04-01').deploymentToken]"
+    },
+    "environmentConfig": {
+      "type": "object",
+      "metadata": {
+        "description": "Environment configuration for application"
+      },
+      "value": {
+        "VITE_AZURE_STORAGE_ACCOUNT_NAME": "[reference('storageAccount').outputs.storageAccountName.value]",
+        "VITE_AZURE_STORAGE_SAS_TOKEN": "[listOutputsWithSecureValues('storageAccount', '2025-04-01').sasToken]",
+        "VITE_AZURE_GAMES_TABLE_NAME": "[parameters('tableNames').games]",
+        "VITE_AZURE_CATEGORIES_TABLE_NAME": "[parameters('tableNames').categories]"
+      }
+    },
+    "deploymentSummary": {
+      "type": "object",
+      "metadata": {
+        "description": "Summary of deployed resources"
+      },
+      "value": {
+        "resourceGroup": "[resourceGroup().name]",
+        "environment": "[parameters('environmentName')]",
+        "location": "[parameters('location')]",
+        "storageAccount": "[reference('storageAccount').outputs.storageAccountName.value]",
+        "staticWebApp": "[reference('staticWebApp').outputs.staticWebAppName.value]",
+        "applicationUrl": "[format('https://{0}', reference('staticWebApp').outputs.defaultHostname.value)]",
+        "tableNames": "[parameters('tableNames')]"
+      }
+    }
+  }
+}

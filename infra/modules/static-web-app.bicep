@@ -70,5 +70,6 @@ output defaultHostname string = staticWebApp.properties.defaultHostname
 @description('Static Web App custom domains')
 output customDomains array = staticWebApp.properties.customDomains
 
-@description('Static Web App deployment token')
+@description('Static Web App deployment token (sensitive - handle securely)')
+@secure()
 output deploymentToken string = staticWebApp.listSecrets().properties.apiKey

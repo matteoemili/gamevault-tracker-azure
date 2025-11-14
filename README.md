@@ -124,15 +124,37 @@ src/
 
 ## Deployment
 
+### Infrastructure as Code
+
+This application includes complete Infrastructure as Code (IaC) definitions for deploying to new, ephemeral Azure environments:
+
+```bash
+# Quick deployment to development environment
+./infra/scripts/deploy.sh --environment dev --resource-group rg-gamevault-dev
+```
+
+**What gets deployed:**
+- Azure Storage Account with Table Storage
+- Azure Static Web Apps for hosting
+- CORS configuration
+- SAS tokens for secure access
+
+**Documentation:**
+- [Quick Start Guide](./infra/QUICK_START.md) - Deploy in minutes
+- [Infrastructure README](./infra/README.md) - Complete IaC documentation
+- [Deployment Guide](./infra/DEPLOYMENT_GUIDE.md) - Step-by-step instructions
+
 ### Azure Static Web Apps
 
 This application is configured for deployment to Azure Static Web Apps:
 
-1. Push to GitHub repository
-2. GitHub Actions automatically builds and deploys
-3. Configure environment variables in Azure Portal
+1. Deploy infrastructure using Bicep templates (see above)
+2. Configure GitHub Secrets with deployment outputs
+3. Push to GitHub repository
+4. GitHub Actions automatically builds and deploys
 
-See `.github/workflows/azure-static-web-apps-*.yml` for CI/CD configuration.
+See `.github/workflows/azure-static-web-apps-*.yml` for application CI/CD configuration.
+See `.github/workflows/iac-deploy.yml` for infrastructure deployment workflow.
 
 ### Manual Deployment
 

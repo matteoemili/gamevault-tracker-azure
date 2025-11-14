@@ -101,10 +101,12 @@ output storageAccountName string = storageAccount.outputs.storageAccountName
 @description('Storage Account endpoint for Table service')
 output storageTableEndpoint string = storageAccount.outputs.tableEndpoint
 
-@description('Storage Account connection string (sensitive)')
+@description('Storage Account connection string (sensitive - handle securely)')
+@secure()
 output storageConnectionString string = storageAccount.outputs.connectionString
 
-@description('SAS token for Table Storage access (sensitive)')
+@description('SAS token for Table Storage access (sensitive - handle securely)')
+@secure()
 output storageSasToken string = storageAccount.outputs.sasToken
 
 @description('Static Web App name')
@@ -113,7 +115,8 @@ output staticWebAppName string = staticWebApp.outputs.staticWebAppName
 @description('Static Web App default hostname')
 output staticWebAppUrl string = staticWebApp.outputs.defaultHostname
 
-@description('Static Web App deployment token (sensitive)')
+@description('Static Web App deployment token (sensitive - handle securely)')
+@secure()
 output staticWebAppDeploymentToken string = staticWebApp.outputs.deploymentToken
 
 @description('Environment configuration for application')
