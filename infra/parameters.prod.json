@@ -1,0 +1,46 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "prod"
+    },
+    "location": {
+      "value": "eastus"
+    },
+    "applicationName": {
+      "value": "gamevault"
+    },
+    "storageAccountSku": {
+      "value": "Standard_GRS"
+    },
+    "staticWebAppSku": {
+      "value": "Standard"
+    },
+    "repositoryUrl": {
+      "value": "https://github.com/matteoemili/gamevault-tracker-azure"
+    },
+    "repositoryBranch": {
+      "value": "main"
+    },
+    "tableNames": {
+      "value": {
+        "games": "games",
+        "categories": "categories"
+      }
+    },
+    "corsAllowedOrigins": {
+      "value": [
+        "http://localhost:5173"
+      ]
+    },
+    "tags": {
+      "value": {
+        "Environment": "Production",
+        "Application": "GameVault Tracker",
+        "ManagedBy": "Bicep",
+        "CostCenter": "Production"
+      }
+    }
+  }
+}
