@@ -11,112 +11,8 @@ on:
       - main
       - cloud-infra
   workflow_dispatch:
-    inputs:
-      deploy_infrastructure:
-        description: 'Deploy infrastructure before app'
-        required: false
-        default: 'false'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
-
-# Required permissions for OIDC authentication with Azure
-permissions:
-  id-token: write
-  contents: read
-  pull-requests: write
-
-# Environment variables for infrastructure deployment
-env:
-  AZURE_RESOURCE_GROUP: rg-gamevault-tracker
-  AZURE_LOCATION: westeurope
-  BICEP_FILE: infra/main.bicep
-  BICEP_PARAMS_FILE: infra/main.bicepparam
 
 jobs:
-  # ============================================================================
-  # Infrastructure Deployment Job
-  # ============================================================================
-  # This job deploys or updates Azure infrastructure using Bicep templates.
-  # It runs on:
-  #   - Manual trigger with deploy_infrastructure=true
-  #   - Push to main when infra/ files change
-  # ============================================================================
-  deploy_infrastructure:
-    name: Deploy Infrastructure
-    runs-on: ubuntu-latest
-    # Run on manual trigger OR when infra files change on push to main
-    if: |
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_infrastructure == 'true') ||
-      (github.event_name == 'push' && contains(github.event.head_commit.modified, 'infra/'))
-    
-    outputs:
-      storage_account_name: ${{ steps.deploy.outputs.storageAccountName }}
-      static_web_app_name: ${{ steps.deploy.outputs.staticWebAppName }}
-      static_web_app_url: ${{ steps.deploy.outputs.staticWebAppUrl }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Azure Login
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Create Resource Group
-        run: |
-          az group create \
-            --name ${{ env.AZURE_RESOURCE_GROUP }} \
-            --location ${{ env.AZURE_LOCATION }} \
-            --tags application="GameVault Tracker" environment="prod" managedBy="GitHub Actions" \
-            || true
-
-      - name: Validate Bicep Template
-        run: |
-          az bicep build --file ${{ env.BICEP_FILE }}
-          az deployment group validate \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --template-file ${{ env.BICEP_FILE }} \
-            --parameters ${{ env.BICEP_PARAMS_FILE }}
-
-      - name: What-If Preview
-        run: |
-          az deployment group what-if \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --template-file ${{ env.BICEP_FILE }} \
-            --parameters ${{ env.BICEP_PARAMS_FILE }}
-
-      - name: Deploy Infrastructure
-        id: deploy
-        run: |
-          DEPLOYMENT_OUTPUT=$(az deployment group create \
-            --name "gamevault-${{ github.run_number }}" \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --template-file ${{ env.BICEP_FILE }} \
-            --parameters ${{ env.BICEP_PARAMS_FILE }} \
-            --query 'properties.outputs' \
-            --output json)
-          
-          # Extract outputs for subsequent jobs
-          echo "storageAccountName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.storageAccountName.value')" >> $GITHUB_OUTPUT
-          echo "staticWebAppName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.staticWebAppName.value')" >> $GITHUB_OUTPUT
-          echo "staticWebAppUrl=$(echo $DEPLOYMENT_OUTPUT | jq -r '.staticWebAppUrl.value')" >> $GITHUB_OUTPUT
-
-      - name: Display Deployment Summary
-        run: |
-          echo "## Infrastructure Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Resource | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Storage Account | ${{ steps.deploy.outputs.storageAccountName }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Static Web App | ${{ steps.deploy.outputs.staticWebAppName }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| URL | ${{ steps.deploy.outputs.staticWebAppUrl }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Resource Group | ${{ env.AZURE_RESOURCE_GROUP }} |" >> $GITHUB_STEP_SUMMARY
-
   # ============================================================================
   # Build and Deploy Application Job
   # ============================================================================
@@ -124,8 +20,6 @@ jobs:
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     name: Build and Deploy Job
-    # Wait for infrastructure if it was deployed
-    needs: [deploy_infrastructure]
     
     steps:
       - uses: actions/checkout@v4
