@@ -73,11 +73,25 @@ jobs:
           submodules: true
           lfs: false
 
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS_SPONSORSHIP }}
+
+      - name: Get SWA Deployment Token
+        id: get_token
+        run: |
+          SWA_NAME="${{ needs.deploy_infrastructure.outputs.static_web_app_name }}"
+          RG_NAME="${{ env.AZURE_RESOURCE_GROUP }}"
+          TOKEN=$(az staticwebapp secrets list --name $SWA_NAME --resource-group $RG_NAME --query "properties.apiKey" -o tsv)
+          echo "::add-mask::$TOKEN"
+          echo "swa_token=$TOKEN" >> $GITHUB_OUTPUT
+
       - name: Build And Deploy
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
         with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_AMBITIOUS_GLACIER_063139803 }}
+          azure_static_web_apps_api_token: ${{ steps.get_token.outputs.swa_token }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: "upload"
           ###### Repository/Build Configurations ######
@@ -99,9 +113,26 @@ jobs:
     runs-on: ubuntu-latest
     name: Close Pull Request Job
     steps:
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS_SPONSORSHIP }}
+
+      - name: Get SWA Deployment Token
+        id: get_token
+        run: |
+          SWA_NAME=$(az staticwebapp list --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query "[0].name" -o tsv)
+          if [ -z "$SWA_NAME" ]; then
+            echo "No Static Web App found. Skipping close."
+            exit 0
+          fi
+          TOKEN=$(az staticwebapp secrets list --name $SWA_NAME --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query "properties.apiKey" -o tsv)
+          echo "::add-mask::$TOKEN"
+          echo "swa_token=$TOKEN" >> $GITHUB_OUTPUT
+
       - name: Close Pull Request
         id: closepullrequest
         uses: Azure/static-web-apps-deploy@v1
         with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_AMBITIOUS_GLACIER_063139803 }}
+          azure_static_web_apps_pi_token: ${{ steps.get_token.outputs.swa_token }}
           action: "close"
