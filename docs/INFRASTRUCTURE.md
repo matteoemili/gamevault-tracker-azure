@@ -130,50 +130,25 @@ This document provides comprehensive documentation for the Infrastructure as Cod
 
 ### CI/CD Prerequisites
 
-For GitHub Actions infrastructure deployment, you need to configure OIDC authentication:
+For GitHub Actions infrastructure deployment, you need to configure a Service Principal with a client secret:
 
-1. **Create Azure AD App Registration**
+1. **Create Service Principal**
+   Run the following command to create a Service Principal with Contributor access to your subscription:
    ```bash
-   # Create app registration
-   az ad app create --display-name "GameVault-GitHub-Actions"
-   
-   # Note the appId (client ID) from output
+   # Replace <subscription-id> with your Azure Subscription ID
+   az ad sp create-for-rbac \
+     --name "GameVault-GitHub-Actions" \
+     --role contributor \
+     --scopes /subscriptions/<subscription-id> \
+     --sdk-auth
    ```
 
-2. **Create Service Principal**
-   ```bash
-   az ad sp create --id <app-id>
-   ```
+2. **Add GitHub Secret**
+   Copy the entire JSON output from the command above and add it as a repository secret:
+   - Name: `AZURE_CREDENTIALS`
+   - Value: (The JSON output)
 
-3. **Configure Federated Credentials**
-   ```bash
-   # Create federation for main branch
-   az ad app federated-credential create \
-     --id <app-id> \
-     --parameters '{
-       "name": "github-main",
-       "issuer": "https://token.actions.githubusercontent.com",
-       "subject": "repo:<owner>/<repo>:ref:refs/heads/main",
-       "audiences": ["api://AzureADTokenExchange"]
-     }'
-   ```
-
-4. **Assign Role to Service Principal**
-   ```bash
-   # Get subscription ID
-   SUBSCRIPTION_ID=$(az account show --query id -o tsv)
-   
-   # Assign Contributor role
-   az role assignment create \
-     --assignee <app-id> \
-     --role "Contributor" \
-     --scope "/subscriptions/$SUBSCRIPTION_ID"
-   ```
-
-5. **Add GitHub Secrets**
-   - `AZURE_CLIENT_ID`: The app registration client ID
-   - `AZURE_TENANT_ID`: Your Azure AD tenant ID
-   - `AZURE_SUBSCRIPTION_ID`: Your Azure subscription ID
+   *Note: This method uses a client secret. Ensure you rotate this secret periodically.*
 
 ---
 
@@ -262,9 +237,9 @@ Removes all infrastructure by deleting the resource group.
 The GitHub Actions workflow (`.github/workflows/azure-static-web-apps-ambitious-glacier-063139803.yml`) includes:
 
 1. **Infrastructure Deployment Job** (`deploy_infrastructure`)
-   - Triggered manually or when `infra/` files change
-   - Uses OIDC authentication with Azure
-   - Validates, previews, and deploys Bicep templates
+   - Triggered on push, pull request, or manual dispatch
+   - Uses Service Principal authentication with Azure
+   - Deploys Bicep templates to ensure infrastructure is up-to-date
 
 2. **Build and Deploy Job** (`build_and_deploy_job`)
    - Runs on every push/PR to main
