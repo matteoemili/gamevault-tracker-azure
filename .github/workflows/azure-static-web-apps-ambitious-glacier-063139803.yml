@@ -66,11 +66,11 @@ jobs:
     runs-on: ubuntu-latest
     name: Build and Deploy Job
     needs: deploy_infrastructure
-    
+    env:
+      STATIC_WEB_APP: ${{ needs.deploy_infrastructure.outputs.staticWebAppName }}
+      STORAGE_ACCOUNT: ${{ needs.deploy_infrastructure.outputs.storageAccountName }}
+
     steps:
-      - env:
-          STATIC_WEB_APP: ${{ needs.deploy_infrastructure.outputs.staticWebAppName }}
-          STORAGE_ACCOUNT: ${{ needs.deploy_infrastructure.outputs.storageAccountName }}
         
       - uses: actions/checkout@v4
         with:
