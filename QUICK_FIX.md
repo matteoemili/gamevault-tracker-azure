@@ -25,7 +25,7 @@ Azure Static Web Apps **Configuration properties don't work for Vite** because:
 4. Add **Secret #2**:
    ```
    Name:  VITE_AZURE_STORAGE_SAS_TOKEN
-   Value: sv=2024-11-04&ss=t&srt=sco&sp=rwdlacu&se=2025-11-24T01:49:03Z&st=2025-10-23T16:34:03Z&spr=https&sig=EsJ69R%2BuaaaOPZ3D%2F9TcD4nfS%2FvYFr9rs8fWiF863HY%3D
+   Value: sv=2024-11-04&ss=t&srt=sco&sp=rwdlacu&se=2025-11-24T01:49:03Z&st=2025-10-23T16:34:03Z&spr=https&sig=<your-signature-here>
    ```
    Click "Add secret"
 
