@@ -68,6 +68,10 @@ jobs:
     needs: deploy_infrastructure
     
     steps:
+      - env:
+          STATIC_WEB_APP: ${{ needs.deploy_infrastructure.outputs.staticWebAppName }}
+          STORAGE_ACCOUNT: ${{ needs.deploy_infrastructure.outputs.storageAccountName }}
+        
       - uses: actions/checkout@v4
         with:
           submodules: true
@@ -81,7 +85,7 @@ jobs:
       - name: Get SWA Deployment Token
         id: get_token
         run: |
-          SWA_NAME="${{ needs.deploy_infrastructure.outputs.static_web_app_name }}"
+          SWA_NAME="${{ env.STATIC_WEB_APP }}"
           RG_NAME="${{ env.AZURE_RESOURCE_GROUP }}"
           TOKEN=$(az staticwebapp secrets list --name $SWA_NAME --resource-group $RG_NAME --query "properties.apiKey" -o tsv)
           echo "::add-mask::$TOKEN"
