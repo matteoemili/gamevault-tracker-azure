@@ -4,33 +4,108 @@ on:
   push:
     branches:
       - main
+      - cloud-infra
   pull_request:
     types: [opened, synchronize, reopened, closed]
     branches:
       - main
+      - cloud-infra
+  workflow_dispatch:
+
+# Environment variables for infrastructure deployment
+env:
+  AZURE_RESOURCE_GROUP: rg-gamevault-tracker
+  AZURE_LOCATION: westeurope
+  BICEP_FILE: infra/main.bicep
+  BICEP_PARAMS_FILE: infra/main.bicepparam
 
 jobs:
+  # ============================================================================
+  # Infrastructure Deployment Job
+  # ============================================================================
+  deploy_infrastructure:
+    if: github.event_name != 'pull_request' || github.event.action != 'closed' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    name: Deploy Infrastructure
+    outputs:
+      storageAccountName: ${{ steps.deploy.outputs.storageAccountName }}
+      staticWebAppName: ${{ steps.deploy.outputs.staticWebAppName }}
+      staticWebAppUrl: ${{ steps.deploy.outputs.staticWebAppUrl }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS_SPONSORSHIP }}
+
+      - name: Create Resource Group
+        run: |
+          az group create \
+            --name ${{ env.AZURE_RESOURCE_GROUP }} \
+            --location ${{ env.AZURE_LOCATION }} \
+            --tags application="GameVault Tracker" environment="prod" managedBy="GitHub Actions"
+
+      - name: Deploy Infrastructure
+        id: deploy
+        run: |
+          DEPLOYMENT_OUTPUT=$(az deployment group create \
+            --name "gamevault-${{ github.run_number }}" \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --template-file ${{ env.BICEP_FILE }} \
+            --parameters ${{ env.BICEP_PARAMS_FILE }} \
+            --query 'properties.outputs' \
+            --output json)
+          
+          # Extract outputs for subsequent jobs
+          echo "storageAccountName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.storageAccountName.value')" >> $GITHUB_OUTPUT
+          echo "staticWebAppName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.staticWebAppName.value')" >> $GITHUB_OUTPUT
+          echo "staticWebAppUrl=$(echo $DEPLOYMENT_OUTPUT | jq -r '.staticWebAppUrl.value')" >> $GITHUB_OUTPUT
+
+  # ============================================================================
+  # Build and Deploy Application Job
+  # ============================================================================
   build_and_deploy_job:
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed')
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     name: Build and Deploy Job
+    needs: deploy_infrastructure
+    env:
+      STATIC_WEB_APP: ${{ needs.deploy_infrastructure.outputs.staticWebAppName }}
+      STORAGE_ACCOUNT: ${{ needs.deploy_infrastructure.outputs.storageAccountName }}
+
     steps:
-      - uses: actions/checkout@v3
+        
+      - uses: actions/checkout@v4
         with:
           submodules: true
           lfs: false
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS_SPONSORSHIP }}
+
+      - name: Get SWA Deployment Token
+        id: get_token
+        run: |
+          SWA_NAME="${{ env.STATIC_WEB_APP }}"
+          RG_NAME="${{ env.AZURE_RESOURCE_GROUP }}"
+          TOKEN=$(az staticwebapp secrets list --name $SWA_NAME --resource-group $RG_NAME --query "properties.apiKey" -o tsv)
+          echo "::add-mask::$TOKEN"
+          echo "swa_token=$TOKEN" >> $GITHUB_OUTPUT
+
       - name: Build And Deploy
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
         with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_AMBITIOUS_GLACIER_063139803 }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }} # Used for Github integrations (i.e. PR comments)
+          azure_static_web_apps_api_token: ${{ steps.get_token.outputs.swa_token }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: "upload"
-          ###### Repository/Build Configurations - These values can be configured to match your app requirements. ######
-          # For more information regarding Static Web App workflow configurations, please visit: https://aka.ms/swaworkflowconfig
-          app_location: "/" # App source code path
-          api_location: "" # Api source code path - optional
-          output_location: "dist" # Built app content directory - optional
+          ###### Repository/Build Configurations ######
+          app_location: "/"
+          api_location: ""
+          output_location: "dist"
           app_build_command: 'npm run build'
           ###### End of Repository/Build Configurations ######
         env:
@@ -38,14 +113,34 @@ jobs:
           VITE_AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.VITE_AZURE_STORAGE_ACCOUNT_NAME }}
           VITE_AZURE_STORAGE_SAS_TOKEN: ${{ secrets.VITE_AZURE_STORAGE_SAS_TOKEN }}
 
+  # ============================================================================
+  # Close Pull Request Job
+  # ============================================================================
   close_pull_request_job:
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
     runs-on: ubuntu-latest
     name: Close Pull Request Job
     steps:
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS_SPONSORSHIP }}
+
+      - name: Get SWA Deployment Token
+        id: get_token
+        run: |
+          SWA_NAME=$(az staticwebapp list --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query "[0].name" -o tsv)
+          if [ -z "$SWA_NAME" ]; then
+            echo "No Static Web App found. Skipping close."
+            exit 0
+          fi
+          TOKEN=$(az staticwebapp secrets list --name $SWA_NAME --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query "properties.apiKey" -o tsv)
+          echo "::add-mask::$TOKEN"
+          echo "swa_token=$TOKEN" >> $GITHUB_OUTPUT
+
       - name: Close Pull Request
         id: closepullrequest
         uses: Azure/static-web-apps-deploy@v1
         with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_AMBITIOUS_GLACIER_063139803 }}
+          azure_static_web_apps_api_token: ${{ steps.get_token.outputs.swa_token }}
           action: "close"
