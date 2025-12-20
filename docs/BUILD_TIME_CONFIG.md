@@ -22,33 +22,65 @@ Now:
 ### 1. Infrastructure Deployment
 ```yaml
 deploy_infrastructure:
+  steps:
+    - Deploy Bicep templates
+    - Extract outputs (storage account name, static web app name/URL, table names)
+    - Configure CORS automatically for the Static Web App URL
   outputs:
     storageAccountName: ${{ steps.deploy.outputs.storageAccountName }}
-    sasToken: ${{ steps.generate_sas.outputs.sasToken }}
+    staticWebAppName: ${{ steps.deploy.outputs.staticWebAppName }}
+    staticWebAppUrl: ${{ steps.deploy.outputs.staticWebAppUrl }}
     gamesTableName: ${{ steps.deploy.outputs.gamesTableName }}
     categoriesTableName: ${{ steps.deploy.outputs.categoriesTableName }}
 ```
 
-### 2. SAS Token Generation
+### 2. CORS Configuration (Automatic)
 ```bash
-az storage account generate-sas \
+az storage cors add \
   --account-name "$STORAGE_ACCOUNT" \
   --services t \
-  --resource-types sco \
-  --permissions raud \
-  --expiry "+1 year" \
-  --https-only
+  --methods GET POST PUT DELETE OPTIONS PATCH \
+  --origins "$WEB_APP_URL" \
+  --allowed-headers "*" \
+  --exposed-headers "*" \
+  --max-age 3600
 ```
 
-### 3. Build-Time Injection
+### 3. SAS Token Generation (In Build Job)
 ```yaml
 build_and_deploy_job:
-  needs: deploy_infrastructure
-  env:
-    VITE_AZURE_STORAGE_ACCOUNT_NAME: ${{ needs.deploy_infrastructure.outputs.storageAccountName }}
-    VITE_AZURE_STORAGE_SAS_TOKEN: ${{ needs.deploy_infrastructure.outputs.sasToken }}
-    VITE_AZURE_GAMES_TABLE_NAME: ${{ needs.deploy_infrastructure.outputs.gamesTableName }}
-    VITE_AZURE_CATEGORIES_TABLE_NAME: ${{ needs.deploy_infrastructure.outputs.categoriesTableName }}
+  steps:
+    - name: Generate SAS Token
+      run: |
+        # Retrieve storage account key
+        ACCOUNT_KEY=$(az storage account keys list ...)
+        
+        # Generate SAS token (valid for 1 year)
+        SAS_TOKEN=$(az storage account generate-sas \
+          --account-name "$STORAGE_ACCOUNT" \
+          --account-key "$ACCOUNT_KEY" \
+          --services t \
+          --resource-types sco \
+          --permissions raud \
+          --expiry "+1 year" \
+          --https-only)
+```
+
+**Important**: The SAS token is generated in the build job (not infrastructure job) to avoid GitHub Actions' security restriction that prevents masked values from being passed as job outputs.
+
+### 4. Build-Time Injection
+```yaml
+- name: Create Production Environment File
+  run: |
+    cat > .env.production << EOF
+    VITE_AZURE_STORAGE_ACCOUNT_NAME=${{ needs.deploy_infrastructure.outputs.storageAccountName }}
+    VITE_AZURE_STORAGE_SAS_TOKEN=${{ steps.generate_sas.outputs.sas_token }}
+    VITE_AZURE_GAMES_TABLE_NAME=${{ needs.deploy_infrastructure.outputs.gamesTableName }}
+    VITE_AZURE_CATEGORIES_TABLE_NAME=${{ needs.deploy_infrastructure.outputs.categoriesTableName }}
+    EOF
+
+- name: Build And Deploy
+  # Vite automatically reads .env.production during build
 ```
 
 ## Benefits
@@ -84,17 +116,19 @@ VITE_AZURE_STORAGE_SAS_TOKEN=your-token
 
 The `.env` file is only used when running `npm run dev` locally. CI/CD deployments ignore this file entirely.
 
-## GitHub Secrets (Optional Cleanup)
+## GitHub Secrets
 
-You can now safely **delete** these secrets from your GitHub repository:
-- `VITE_AZURE_STORAGE_ACCOUNT_NAME`
-- `VITE_AZURE_STORAGE_SAS_TOKEN`
+**Only one secret is required**:
+- `AZURE_CREDENTIALS_SPONSORSHIP` - Azure service principal credentials for authentication
 
-These are no longer needed since values come from the infrastructure job outputs.
+**Automatically provided by GitHub**:
+- `GITHUB_TOKEN` - Used for deployment token retrieval
 
-**Keep these secrets**:
-- `AZURE_CREDENTIALS_SPONSORSHIP` (required for Azure login)
-- `GITHUB_TOKEN` (automatically provided by GitHub)
+**Not needed** (handled automatically by the pipeline):
+- ~~`VITE_AZURE_STORAGE_ACCOUNT_NAME`~~ - Retrieved from infrastructure deployment
+- ~~`VITE_AZURE_STORAGE_SAS_TOKEN`~~ - Generated dynamically in the build job
+- ~~`VITE_AZURE_GAMES_TABLE_NAME`~~ - Retrieved from infrastructure deployment
+- ~~`VITE_AZURE_CATEGORIES_TABLE_NAME`~~ - Retrieved from infrastructure deployment
 
 ## Alternative Approach: Runtime Configuration
 

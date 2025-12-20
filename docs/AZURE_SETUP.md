@@ -97,7 +97,18 @@ az storage account generate-sas \
 
 ## CORS Configuration
 
-Cross-Origin Resource Sharing (CORS) must be configured to allow your web application to access Azure Table Storage from the browser.
+**Note**: CORS is automatically configured by the CI/CD pipeline. This section is for reference or manual troubleshooting only.
+
+The GitHub Actions workflow automatically:
+1. Retrieves the Static Web App URL from deployment outputs
+2. Configures CORS for the Table Service with:
+   - Allowed origin: The Static Web App URL
+   - Methods: GET, POST, PUT, DELETE, OPTIONS, PATCH
+   - Headers: * (all)
+   - Exposed headers: * (all)
+   - Max age: 3600 seconds
+
+Cross-Origin Resource Sharing (CORS) allows your web application to access Azure Table Storage from the browser.
 
 ### Configure CORS in Azure Portal
 
