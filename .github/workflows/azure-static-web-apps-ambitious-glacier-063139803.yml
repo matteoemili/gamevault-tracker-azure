@@ -31,7 +31,6 @@ jobs:
       storageAccountName: ${{ steps.deploy.outputs.storageAccountName }}
       staticWebAppName: ${{ steps.deploy.outputs.staticWebAppName }}
       staticWebAppUrl: ${{ steps.deploy.outputs.staticWebAppUrl }}
-      sasToken: ${{ steps.generate_sas.outputs.sasToken }}
       gamesTableName: ${{ steps.deploy.outputs.gamesTableName }}
       categoriesTableName: ${{ steps.deploy.outputs.categoriesTableName }}
     steps:
@@ -67,51 +66,6 @@ jobs:
           echo "gamesTableName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.gamesTableName.value')" >> $GITHUB_OUTPUT
           echo "categoriesTableName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.categoriesTableName.value')" >> $GITHUB_OUTPUT
 
-      - name: Generate SAS Token
-        id: generate_sas
-        run: |
-          STORAGE_ACCOUNT="${{ steps.deploy.outputs.storageAccountName }}"
-          
-          echo "🔑 Retrieving storage account key..."
-          ACCOUNT_KEY=$(az storage account keys list \
-            --account-name "$STORAGE_ACCOUNT" \
-            --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
-            --query '[0].value' \
-            --output tsv)
-          
-          if [ -z "$ACCOUNT_KEY" ]; then
-            echo "❌ Failed to retrieve storage account key"
-            exit 1
-          fi
-          
-          echo "::add-mask::$ACCOUNT_KEY"
-          echo "✅ Storage account key retrieved"
-          
-          # Calculate expiry date (1 year from now)
-          EXPIRY=$(date -u -v+1y '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '+1 year' '+%Y-%m-%dT%H:%M:%SZ')
-          
-          echo "🔐 Generating SAS token (valid until $EXPIRY)..."
-          # Generate SAS token with table permissions (Read, Add, Update, Delete)
-          SAS_TOKEN=$(az storage account generate-sas \
-            --account-name "$STORAGE_ACCOUNT" \
-            --account-key "$ACCOUNT_KEY" \
-            --services t \
-            --resource-types sco \
-            --permissions raud \
-            --expiry "$EXPIRY" \
-            --https-only \
-            --output tsv)
-          
-          if [ -z "$SAS_TOKEN" ]; then
-            echo "❌ Failed to generate SAS token"
-            exit 1
-          fi
-          
-          # Mask the token in logs
-          echo "::add-mask::$SAS_TOKEN"
-          echo "sasToken=$SAS_TOKEN" >> $GITHUB_OUTPUT
-          echo "✅ SAS token generated successfully (length: ${#SAS_TOKEN} characters)"
-
   # ============================================================================
   # Build and Deploy Application Job
   # ============================================================================
@@ -136,6 +90,48 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS_SPONSORSHIP }}
 
+      - name: Generate SAS Token
+        id: generate_sas
+        run: |
+          STORAGE_ACCOUNT="${{ env.STORAGE_ACCOUNT }}"
+          
+          echo "🔑 Retrieving storage account key..."
+          ACCOUNT_KEY=$(az storage account keys list \
+            --account-name "$STORAGE_ACCOUNT" \
+            --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
+            --query '[0].value' \
+            --output tsv)
+          
+          if [ -z "$ACCOUNT_KEY" ]; then
+            echo "❌ Failed to retrieve storage account key"
+            exit 1
+          fi
+          
+          echo "✅ Storage account key retrieved"
+          
+          # Calculate expiry date (1 year from now)
+          EXPIRY=$(date -u -v+1y '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '+1 year' '+%Y-%m-%dT%H:%M:%SZ')
+          
+          echo "🔐 Generating SAS token (valid until $EXPIRY)..."
+          # Generate SAS token with table permissions (Read, Add, Update, Delete)
+          SAS_TOKEN=$(az storage account generate-sas \
+            --account-name "$STORAGE_ACCOUNT" \
+            --account-key "$ACCOUNT_KEY" \
+            --services t \
+            --resource-types sco \
+            --permissions raud \
+            --expiry "$EXPIRY" \
+            --https-only \
+            --output tsv)
+          
+          if [ -z "$SAS_TOKEN" ]; then
+            echo "❌ Failed to generate SAS token"
+            exit 1
+          fi
+          
+          echo "✅ SAS token generated successfully (length: ${#SAS_TOKEN} characters)"
+          echo "sas_token=$SAS_TOKEN" >> $GITHUB_OUTPUT
+
       - name: Get SWA Deployment Token
         id: get_token
         run: |
@@ -153,14 +149,14 @@ jobs:
           echo "VITE_AZURE_CATEGORIES_TABLE_NAME: ${{ needs.deploy_infrastructure.outputs.categoriesTableName }}"
           echo "SAS Token length: ${#SAS_TOKEN}"
         env:
-          SAS_TOKEN: ${{ needs.deploy_infrastructure.outputs.sasToken }}
+          SAS_TOKEN: ${{ steps.generate_sas.outputs.sas_token }}
 
       - name: Create Production Environment File
         run: |
           echo "📝 Creating .env.production file..."
           cat > .env.production << EOF
           VITE_AZURE_STORAGE_ACCOUNT_NAME=${{ needs.deploy_infrastructure.outputs.storageAccountName }}
-          VITE_AZURE_STORAGE_SAS_TOKEN=${{ needs.deploy_infrastructure.outputs.sasToken }}
+          VITE_AZURE_STORAGE_SAS_TOKEN=${{ steps.generate_sas.outputs.sas_token }}
           VITE_AZURE_GAMES_TABLE_NAME=${{ needs.deploy_infrastructure.outputs.gamesTableName }}
           VITE_AZURE_CATEGORIES_TABLE_NAME=${{ needs.deploy_infrastructure.outputs.categoriesTableName }}
           EOF
@@ -187,7 +183,7 @@ jobs:
             --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
             --setting-names \
               VITE_AZURE_STORAGE_ACCOUNT_NAME="${{ needs.deploy_infrastructure.outputs.storageAccountName }}" \
-              VITE_AZURE_STORAGE_SAS_TOKEN="${{ needs.deploy_infrastructure.outputs.sasToken }}" \
+              VITE_AZURE_STORAGE_SAS_TOKEN="${{ steps.generate_sas.outputs.sas_token }}" \
               VITE_AZURE_GAMES_TABLE_NAME="${{ needs.deploy_infrastructure.outputs.gamesTableName }}" \
               VITE_AZURE_CATEGORIES_TABLE_NAME="${{ needs.deploy_infrastructure.outputs.categoriesTableName }}"
           echo "✅ Application settings configured"
