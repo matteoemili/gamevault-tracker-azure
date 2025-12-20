@@ -72,12 +72,29 @@ jobs:
         run: |
           STORAGE_ACCOUNT="${{ steps.deploy.outputs.storageAccountName }}"
           
+          echo "🔑 Retrieving storage account key..."
+          ACCOUNT_KEY=$(az storage account keys list \
+            --account-name "$STORAGE_ACCOUNT" \
+            --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
+            --query '[0].value' \
+            --output tsv)
+          
+          if [ -z "$ACCOUNT_KEY" ]; then
+            echo "❌ Failed to retrieve storage account key"
+            exit 1
+          fi
+          
+          echo "::add-mask::$ACCOUNT_KEY"
+          echo "✅ Storage account key retrieved"
+          
           # Calculate expiry date (1 year from now)
           EXPIRY=$(date -u -v+1y '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '+1 year' '+%Y-%m-%dT%H:%M:%SZ')
           
+          echo "🔐 Generating SAS token (valid until $EXPIRY)..."
           # Generate SAS token with table permissions (Read, Add, Update, Delete)
           SAS_TOKEN=$(az storage account generate-sas \
             --account-name "$STORAGE_ACCOUNT" \
+            --account-key "$ACCOUNT_KEY" \
             --services t \
             --resource-types sco \
             --permissions raud \
@@ -85,10 +102,15 @@ jobs:
             --https-only \
             --output tsv)
           
+          if [ -z "$SAS_TOKEN" ]; then
+            echo "❌ Failed to generate SAS token"
+            exit 1
+          fi
+          
           # Mask the token in logs
           echo "::add-mask::$SAS_TOKEN"
           echo "sasToken=$SAS_TOKEN" >> $GITHUB_OUTPUT
-          echo "✅ Generated SAS token valid until $EXPIRY"
+          echo "✅ SAS token generated successfully (length: ${#SAS_TOKEN} characters)"
 
   # ============================================================================
   # Build and Deploy Application Job
