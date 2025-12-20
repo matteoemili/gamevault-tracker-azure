@@ -31,6 +31,9 @@ jobs:
       storageAccountName: ${{ steps.deploy.outputs.storageAccountName }}
       staticWebAppName: ${{ steps.deploy.outputs.staticWebAppName }}
       staticWebAppUrl: ${{ steps.deploy.outputs.staticWebAppUrl }}
+      sasToken: ${{ steps.generate_sas.outputs.sasToken }}
+      gamesTableName: ${{ steps.deploy.outputs.gamesTableName }}
+      categoriesTableName: ${{ steps.deploy.outputs.categoriesTableName }}
     steps:
       - uses: actions/checkout@v4
 
@@ -61,6 +64,31 @@ jobs:
           echo "storageAccountName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.storageAccountName.value')" >> $GITHUB_OUTPUT
           echo "staticWebAppName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.staticWebAppName.value')" >> $GITHUB_OUTPUT
           echo "staticWebAppUrl=$(echo $DEPLOYMENT_OUTPUT | jq -r '.staticWebAppUrl.value')" >> $GITHUB_OUTPUT
+          echo "gamesTableName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.gamesTableName.value')" >> $GITHUB_OUTPUT
+          echo "categoriesTableName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.categoriesTableName.value')" >> $GITHUB_OUTPUT
+
+      - name: Generate SAS Token
+        id: generate_sas
+        run: |
+          STORAGE_ACCOUNT="${{ steps.deploy.outputs.storageAccountName }}"
+          
+          # Calculate expiry date (1 year from now)
+          EXPIRY=$(date -u -v+1y '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '+1 year' '+%Y-%m-%dT%H:%M:%SZ')
+          
+          # Generate SAS token with table permissions (Read, Add, Update, Delete)
+          SAS_TOKEN=$(az storage account generate-sas \
+            --account-name "$STORAGE_ACCOUNT" \
+            --services t \
+            --resource-types sco \
+            --permissions raud \
+            --expiry "$EXPIRY" \
+            --https-only \
+            --output tsv)
+          
+          # Mask the token in logs
+          echo "::add-mask::$SAS_TOKEN"
+          echo "sasToken=$SAS_TOKEN" >> $GITHUB_OUTPUT
+          echo "✅ Generated SAS token valid until $EXPIRY"
 
   # ============================================================================
   # Build and Deploy Application Job
@@ -109,9 +137,11 @@ jobs:
           app_build_command: 'npm run build'
           ###### End of Repository/Build Configurations ######
         env:
-          # Vite environment variables must be set at BUILD time
-          VITE_AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.VITE_AZURE_STORAGE_ACCOUNT_NAME }}
-          VITE_AZURE_STORAGE_SAS_TOKEN: ${{ secrets.VITE_AZURE_STORAGE_SAS_TOKEN }}
+          # Vite environment variables injected from infrastructure deployment
+          VITE_AZURE_STORAGE_ACCOUNT_NAME: ${{ needs.deploy_infrastructure.outputs.storageAccountName }}
+          VITE_AZURE_STORAGE_SAS_TOKEN: ${{ needs.deploy_infrastructure.outputs.sasToken }}
+          VITE_AZURE_GAMES_TABLE_NAME: ${{ needs.deploy_infrastructure.outputs.gamesTableName }}
+          VITE_AZURE_CATEGORIES_TABLE_NAME: ${{ needs.deploy_infrastructure.outputs.categoriesTableName }}
 
   # ============================================================================
   # Close Pull Request Job
