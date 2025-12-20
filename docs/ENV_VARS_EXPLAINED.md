@@ -1,6 +1,51 @@
-# Environment Variables Flow - Vite vs Azure Static Web Apps
+# Environment Variables Flow - Automated CI/CD Approach
 
-## The Problem Explained
+## Current Implementation (Automated)
+
+**This application now uses a fully automated CI/CD pipeline that eliminates manual secret management.**
+
+Environment variables are:
+1. ✅ Generated dynamically during deployment (SAS token)
+2. ✅ Retrieved from infrastructure outputs (storage account name, table names)
+3. ✅ Injected at build time via `.env.production` file
+4. ✅ Baked into the JavaScript bundle by Vite
+
+## Legacy Documentation: The Problem We Solved
+
+## Current Automated Flow
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  INFRASTRUCTURE JOB                                         │
+│  ✅ Deploys Azure Resources                                 │
+├─────────────────────────────────────────────────────────────┤
+│  1. Deploy Bicep templates (storage, static web app)        │
+│  2. Extract deployment outputs                              │
+│     • Storage account name                                  │
+│     • Static Web App URL                                    │
+│     • Table names (games, categories)                       │
+│  3. Configure CORS automatically                            │
+│     • Adds Static Web App URL to storage CORS rules        │
+└─────────────────────────────────────────────────────────────┘
+          ↓
+┌─────────────────────────────────────────────────────────────┐
+│  BUILD JOB                                                  │
+│  ✅ Generates SAS Token & Builds Application                │
+├─────────────────────────────────────────────────────────────┤
+│  1. Retrieve storage account key (secure)                   │
+│  2. Generate SAS token (1 year expiry)                      │
+│  3. Create .env.production file with:                       │
+│     • Storage account name (from infrastructure)            │
+│     • SAS token (freshly generated)                         │
+│     • Table names (from infrastructure)                     │
+│  4. Run npm run build                                       │
+│     • Vite reads .env.production                            │
+│     • Variables baked into JavaScript bundle                │
+│  5. Deploy dist/ folder to Azure Static Web Apps            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Legacy Documentation: Why Manual Secrets Don't Work
 
 ```
 ┌─────────────────────────────────────────────────────────────┐

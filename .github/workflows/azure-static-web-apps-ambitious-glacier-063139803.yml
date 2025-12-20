@@ -4,12 +4,12 @@ on:
   push:
     branches:
       - main
-      - cloud-infra
+      - CORS-setup
   pull_request:
     types: [opened, synchronize, reopened, closed]
     branches:
       - main
-      - cloud-infra
+      - CORS-setup
   workflow_dispatch:
 
 # Environment variables for infrastructure deployment
@@ -31,6 +31,8 @@ jobs:
       storageAccountName: ${{ steps.deploy.outputs.storageAccountName }}
       staticWebAppName: ${{ steps.deploy.outputs.staticWebAppName }}
       staticWebAppUrl: ${{ steps.deploy.outputs.staticWebAppUrl }}
+      gamesTableName: ${{ steps.deploy.outputs.gamesTableName }}
+      categoriesTableName: ${{ steps.deploy.outputs.categoriesTableName }}
     steps:
       - uses: actions/checkout@v4
 
@@ -61,6 +63,28 @@ jobs:
           echo "storageAccountName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.storageAccountName.value')" >> $GITHUB_OUTPUT
           echo "staticWebAppName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.staticWebAppName.value')" >> $GITHUB_OUTPUT
           echo "staticWebAppUrl=$(echo $DEPLOYMENT_OUTPUT | jq -r '.staticWebAppUrl.value')" >> $GITHUB_OUTPUT
+          echo "gamesTableName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.gamesTableName.value')" >> $GITHUB_OUTPUT
+          echo "categoriesTableName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.categoriesTableName.value')" >> $GITHUB_OUTPUT
+
+      - name: Configure Storage CORS
+        run: |
+          STORAGE_ACCOUNT="${{ steps.deploy.outputs.storageAccountName }}"
+          WEB_APP_URL="${{ steps.deploy.outputs.staticWebAppUrl }}"
+          
+          echo "🌐 Configuring CORS for Table Service..."
+          echo "Storage Account: $STORAGE_ACCOUNT"
+          echo "Allowed Origin: $WEB_APP_URL"
+          
+          az storage cors add \
+            --account-name "$STORAGE_ACCOUNT" \
+            --services t \
+            --methods GET POST PUT DELETE OPTIONS PATCH \
+            --origins "$WEB_APP_URL" \
+            --allowed-headers "*" \
+            --exposed-headers "*" \
+            --max-age 3600
+          
+          echo "✅ CORS configured successfully"
 
   # ============================================================================
   # Build and Deploy Application Job
@@ -86,6 +110,48 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS_SPONSORSHIP }}
 
+      - name: Generate SAS Token
+        id: generate_sas
+        run: |
+          STORAGE_ACCOUNT="${{ env.STORAGE_ACCOUNT }}"
+          
+          echo "🔑 Retrieving storage account key..."
+          ACCOUNT_KEY=$(az storage account keys list \
+            --account-name "$STORAGE_ACCOUNT" \
+            --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
+            --query '[0].value' \
+            --output tsv)
+          
+          if [ -z "$ACCOUNT_KEY" ]; then
+            echo "❌ Failed to retrieve storage account key"
+            exit 1
+          fi
+          
+          echo "✅ Storage account key retrieved"
+          
+          # Calculate expiry date (1 year from now)
+          EXPIRY=$(date -u -v+1y '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '+1 year' '+%Y-%m-%dT%H:%M:%SZ')
+          
+          echo "🔐 Generating SAS token (valid until $EXPIRY)..."
+          # Generate SAS token with table permissions (Read, Add, Update, Delete)
+          SAS_TOKEN=$(az storage account generate-sas \
+            --account-name "$STORAGE_ACCOUNT" \
+            --account-key "$ACCOUNT_KEY" \
+            --services t \
+            --resource-types sco \
+            --permissions raud \
+            --expiry "$EXPIRY" \
+            --https-only \
+            --output tsv)
+          
+          if [ -z "$SAS_TOKEN" ]; then
+            echo "❌ Failed to generate SAS token"
+            exit 1
+          fi
+          
+          echo "✅ SAS token generated successfully (length: ${#SAS_TOKEN} characters)"
+          echo "sas_token=$SAS_TOKEN" >> $GITHUB_OUTPUT
+
       - name: Get SWA Deployment Token
         id: get_token
         run: |
@@ -94,6 +160,27 @@ jobs:
           TOKEN=$(az staticwebapp secrets list --name $SWA_NAME --resource-group $RG_NAME --query "properties.apiKey" -o tsv)
           echo "::add-mask::$TOKEN"
           echo "swa_token=$TOKEN" >> $GITHUB_OUTPUT
+
+      - name: Debug Environment Variables
+        run: |
+          echo "🔍 Environment variables being passed to build:"
+          echo "VITE_AZURE_STORAGE_ACCOUNT_NAME: ${{ needs.deploy_infrastructure.outputs.storageAccountName }}"
+          echo "VITE_AZURE_GAMES_TABLE_NAME: ${{ needs.deploy_infrastructure.outputs.gamesTableName }}"
+          echo "VITE_AZURE_CATEGORIES_TABLE_NAME: ${{ needs.deploy_infrastructure.outputs.categoriesTableName }}"
+          echo "SAS Token length: ${#SAS_TOKEN}"
+        env:
+          SAS_TOKEN: ${{ steps.generate_sas.outputs.sas_token }}
+
+      - name: Create Production Environment File
+        run: |
+          echo "📝 Creating .env.production file..."
+          cat > .env.production << EOF
+          VITE_AZURE_STORAGE_ACCOUNT_NAME=${{ needs.deploy_infrastructure.outputs.storageAccountName }}
+          VITE_AZURE_STORAGE_SAS_TOKEN=${{ steps.generate_sas.outputs.sas_token }}
+          VITE_AZURE_GAMES_TABLE_NAME=${{ needs.deploy_infrastructure.outputs.gamesTableName }}
+          VITE_AZURE_CATEGORIES_TABLE_NAME=${{ needs.deploy_infrastructure.outputs.categoriesTableName }}
+          EOF
+          echo "✅ .env.production created"
 
       - name: Build And Deploy
         id: builddeploy
@@ -106,12 +193,20 @@ jobs:
           app_location: "/"
           api_location: ""
           output_location: "dist"
-          app_build_command: 'npm run build'
           ###### End of Repository/Build Configurations ######
-        env:
-          # Vite environment variables must be set at BUILD time
-          VITE_AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.VITE_AZURE_STORAGE_ACCOUNT_NAME }}
-          VITE_AZURE_STORAGE_SAS_TOKEN: ${{ secrets.VITE_AZURE_STORAGE_SAS_TOKEN }}
+
+      - name: Configure Static Web App Settings
+        run: |
+          echo "🔧 Configuring Static Web App application settings..."
+          az staticwebapp appsettings set \
+            --name "${{ env.STATIC_WEB_APP }}" \
+            --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
+            --setting-names \
+              VITE_AZURE_STORAGE_ACCOUNT_NAME="${{ needs.deploy_infrastructure.outputs.storageAccountName }}" \
+              VITE_AZURE_STORAGE_SAS_TOKEN="${{ steps.generate_sas.outputs.sas_token }}" \
+              VITE_AZURE_GAMES_TABLE_NAME="${{ needs.deploy_infrastructure.outputs.gamesTableName }}" \
+              VITE_AZURE_CATEGORIES_TABLE_NAME="${{ needs.deploy_infrastructure.outputs.categoriesTableName }}"
+          echo "✅ Application settings configured"
 
   # ============================================================================
   # Close Pull Request Job

@@ -1,12 +1,21 @@
 # Production Deployment Guide - Azure Static Web Apps
 
-## ⚠️ Critical: Vite Environment Variables
+## ✅ Automated CI/CD Deployment
 
-**Important**: Vite environment variables are **baked into the JavaScript bundle at BUILD time**, not runtime. This means:
+**This application uses a fully automated CI/CD pipeline.** Environment variables are automatically injected during the build process:
 
-- ❌ Azure Static Web Apps "Configuration" settings **DO NOT WORK** for Vite variables
-- ✅ You must set environment variables as **GitHub Secrets** for the build process
-- ✅ Variables are embedded in the built `dist/` folder during `npm run build`
+- ✅ SAS tokens are **generated automatically** from infrastructure deployment
+- ✅ Storage account names are **passed dynamically** from Bicep outputs
+- ✅ CORS settings are **automatically configured** for the deployed Static Web App URL
+- ✅ **No manual GitHub secrets management required**
+
+### How It Works
+
+1. **Infrastructure Job**: Deploys Azure resources (storage account, static web app, tables)
+2. **Build Job**: Generates fresh SAS token and builds the application with injected variables
+3. **CORS Configuration**: Automatically adds the Static Web App URL to storage CORS rules
+
+Vite environment variables are **baked into the JavaScript bundle at BUILD time**, not runtime.
 
 ## Security Consideration
 
@@ -17,14 +26,62 @@
 - ✅ Expiration date (rotate regularly)
 - ✅ Revocable without changing account keys
 
-## Step-by-Step Deployment (Mac/Linux/Windows)
+## Automated Deployment Process
 
-### 1. Generate a SAS Token (for Production)
+### How to Deploy
 
-#### Option A: Azure Portal (Easiest)
+Simply push your code to the `main` branch:
+
+```bash
+git add .
+git commit -m "Your changes"
+git push origin main
+```
+
+The GitHub Actions workflow automatically:
+
+1. **Deploys Infrastructure** (if needed)
+   - Creates/updates Azure Storage Account
+   - Creates/updates Azure Static Web App
+   - Creates game and category tables
+
+2. **Configures CORS**
+   - Automatically adds the Static Web App URL to storage CORS rules
+   - Allows all HTTP methods (GET, POST, PUT, DELETE, OPTIONS, PATCH)
+   - Sets proper headers and max age (3600 seconds)
+
+3. **Generates SAS Token**
+   - Retrieves storage account key securely
+   - Generates a SAS token valid for 1 year
+   - Token has limited permissions (Table service only: Read, Add, Update, Delete)
+
+4. **Builds Application**
+   - Creates `.env.production` with injected values
+   - Runs `npm run build` with environment variables
+   - Vite bakes the configuration into the JavaScript bundle
+
+5. **Deploys to Azure**
+   - Uploads the built application to Azure Static Web Apps
+   - Configures application settings (for future API functions if needed)
+
+### Required GitHub Secrets
+
+Only one secret is required for the entire pipeline:
+
+- **`AZURE_CREDENTIALS_SPONSORSHIP`**: Azure service principal credentials for authentication
+
+All other configuration is handled automatically!
+
+## Manual Configuration (Only if Needed)
+
+### Generate a SAS Token Manually
+
+**Note**: The CI/CD pipeline handles this automatically. Manual generation is only needed for local development or troubleshooting.
+
+#### Azure Portal
 
 1. Open [Azure Portal](https://portal.azure.com)
-2. Navigate to your Storage Account: `stvgcollection`
+2. Navigate to your Storage Account
 3. Go to **Security + networking** > **Shared access signature**
 4. Configure:
    - **Allowed services**: ✅ Table only
@@ -33,69 +90,15 @@
    - **Start and expiry date/time**: Set expiry to 6-12 months
    - **Allowed protocols**: HTTPS only
 5. Click **Generate SAS and connection string**
-6. Copy the **SAS token** (starts with `?sv=...` or `sv=...`)
+6. Copy the **SAS token**
 
-#### Option B: Azure CLI (Mac/Linux/Windows)
+### Manual CORS Configuration
 
-```bash
-# Install Azure CLI (Mac - using Homebrew)
-brew install azure-cli
+**Note**: The CI/CD pipeline configures CORS automatically. Manual configuration is only needed for troubleshooting.
 
-# Install Azure CLI (Windows - using winget)
-# winget install -e --id Microsoft.AzureCLI
+#### Azure Portal
 
-# Login
-az login
-
-# Set variables
-STORAGE_ACCOUNT="stvgcollection"
-EXPIRY_DATE=$(date -u -v+1y '+%Y-%m-%dT%H:%MZ')  # Mac/BSD
-# EXPIRY_DATE=$(date -u -d "1 year" '+%Y-%m-%dT%H:%MZ')  # Linux
-
-# Generate SAS token (valid for 1 year)
-az storage account generate-sas \
-  --account-name $STORAGE_ACCOUNT \
-  --services t \
-  --resource-types sco \
-  --permissions rwdlacu \
-  --expiry $EXPIRY_DATE \
-  --https-only \
-  --output tsv
-```
-
-Copy the output (this is your SAS token).
-
-### 2. Add Secrets to GitHub Repository
-
-1. Go to your GitHub repository: `https://github.com/matteoemili/gamevault-tracker-azure`
-2. Click **Settings** > **Secrets and variables** > **Actions**
-3. Click **New repository secret**
-4. Add these secrets:
-
-   **Secret 1:**
-   - Name: `VITE_AZURE_STORAGE_ACCOUNT_NAME`
-   - Value: `stvgcollection`
-
-   **Secret 2:**
-   - Name: `VITE_AZURE_STORAGE_SAS_TOKEN`
-   - Value: `sv=2024-11-04&ss=t&srt=sco&sp=rwdlacu&se=2026-10-23T00:00:00Z&st=2025-10-23T00:00:00Z&spr=https&sig=...`
-   - (Use the full token from step 1, with or without the leading `?`)
-
-### 3. Configure CORS for Production
-
-You need to add your production domain to CORS settings:
-
-#### Get Your Static Web App URL
-
-1. Go to [Azure Portal](https://portal.azure.com)
-2. Find your Static Web App (search for "ambitious-glacier")
-3. Copy the URL (e.g., `https://ambitious-glacier-063139803.azurestaticapps.net`)
-
-#### Update CORS in Storage Account
-
-**Option A: Azure Portal**
-
-1. Go to Storage Account: `stvgcollection`
+1. Go to your Storage Account
 2. **Settings** > **Resource sharing (CORS)**
 3. **Table service** tab
 4. Click **+ Add CORS rule**:
