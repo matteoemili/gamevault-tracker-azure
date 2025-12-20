@@ -66,6 +66,26 @@ jobs:
           echo "gamesTableName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.gamesTableName.value')" >> $GITHUB_OUTPUT
           echo "categoriesTableName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.categoriesTableName.value')" >> $GITHUB_OUTPUT
 
+      - name: Configure Storage CORS
+        run: |
+          STORAGE_ACCOUNT="${{ steps.deploy.outputs.storageAccountName }}"
+          WEB_APP_URL="${{ steps.deploy.outputs.staticWebAppUrl }}"
+          
+          echo "🌐 Configuring CORS for Table Service..."
+          echo "Storage Account: $STORAGE_ACCOUNT"
+          echo "Allowed Origin: $WEB_APP_URL"
+          
+          az storage cors add \
+            --account-name "$STORAGE_ACCOUNT" \
+            --services t \
+            --methods GET POST PUT DELETE OPTIONS PATCH \
+            --origins "$WEB_APP_URL" \
+            --allowed-headers "*" \
+            --exposed-headers "*" \
+            --max-age 3600
+          
+          echo "✅ CORS configured successfully"
+
   # ============================================================================
   # Build and Deploy Application Job
   # ============================================================================
