@@ -55,9 +55,13 @@ jobs:
         id: set_instance
         run: |
           # Determine environment
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          EVENT_NAME="${{ github.event_name }}"
+          if [ "$EVENT_NAME" == "workflow_dispatch" ]; then
             ENVIRONMENT="${{ inputs.environment }}"
             INPUT_INSTANCE_ID="${{ inputs.instance_id }}"
+          elif [ "$EVENT_NAME" == "pull_request" ]; then
+            ENVIRONMENT="pr"
+            INPUT_INSTANCE_ID="pr${{ github.event.pull_request.number }}"
           else
             ENVIRONMENT="prod"
             INPUT_INSTANCE_ID=""
@@ -89,7 +93,7 @@ jobs:
           echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
           
           # Determine bicep params file
-          if [ "$ENVIRONMENT" == "dev" ]; then
+          if [ "$ENVIRONMENT" == "dev" ] || [ "$ENVIRONMENT" == "pr" ]; then
             echo "BICEP_PARAMS_FILE=infra/main.dev.bicepparam" >> $GITHUB_ENV
           elif [ "$ENVIRONMENT" == "staging" ]; then
             echo "BICEP_PARAMS_FILE=infra/main.staging.bicepparam" >> $GITHUB_ENV
@@ -318,6 +322,14 @@ jobs:
     runs-on: ubuntu-latest
     name: Close Pull Request Job
     steps:
+      - name: Determine PR Instance
+        id: pr_instance
+        run: |
+          INSTANCE_ID="pr${{ github.event.pull_request.number }}"
+          RESOURCE_GROUP="rg-gamevault-${INSTANCE_ID}"
+          echo "instanceId=$INSTANCE_ID" >> $GITHUB_OUTPUT
+          echo "resourceGroup=$RESOURCE_GROUP" >> $GITHUB_OUTPUT
+
       - name: Azure Login
         uses: azure/login@v2
         with:
@@ -326,11 +338,13 @@ jobs:
       - name: Find and Close Staging Environment
         id: find_swa
         run: |
-          # In multi-instance setup, we need to find the correct resource group
-          # For PR closures, we'll use a default resource group or skip if not found
-          RESOURCE_GROUP="rg-gamevault-tracker"
-          
-          # Check if resource group exists
+          RESOURCE_GROUP="${{ steps.pr_instance.outputs.resourceGroup }}"
+          if [ -z "$RESOURCE_GROUP" ]; then
+            echo "No resource group determined. Skipping."
+            echo "found=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
           if az group exists --name "$RESOURCE_GROUP" | grep -q "true"; then
             SWA_NAME=$(az staticwebapp list --resource-group $RESOURCE_GROUP --query "[0].name" -o tsv 2>/dev/null || echo "")
             
@@ -356,3 +370,14 @@ jobs:
         with:
           azure_static_web_apps_api_token: ${{ steps.find_swa.outputs.swa_token }}
           action: "close"
+
+      - name: Delete PR Resource Group
+        if: steps.pr_instance.outputs.resourceGroup != ''
+        run: |
+          RESOURCE_GROUP="${{ steps.pr_instance.outputs.resourceGroup }}"
+          if az group exists --name "$RESOURCE_GROUP" | grep -q "true"; then
+            echo "Deleting resource group $RESOURCE_GROUP..."
+            az group delete --name "$RESOURCE_GROUP" --yes --no-wait
+          else
+            echo "Resource group $RESOURCE_GROUP already deleted."
+          fi
