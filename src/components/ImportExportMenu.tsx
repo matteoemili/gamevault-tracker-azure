@@ -23,6 +23,7 @@ import { Label } from '@/components/ui/label';
 import { DotsThree, DownloadSimple, UploadSimple, Tag, MagnifyingGlass, Star, Warning } from '@phosphor-icons/react';
 import { generateBlankCSV, exportGamesToCSV, parseCSV, downloadCSV } from '@/lib/csv';
 import { Game } from '@/lib/types';
+import { DEFAULT_CATEGORIES } from '@/lib/categories';
 import { toast } from 'sonner';
 import { CategoryDialog, PlatformCategory } from './CategoryDialog';
 import { PlatformLogo } from './PlatformLogo';
@@ -109,7 +110,8 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
     const reader = new FileReader();
     reader.onload = (event) => {
       const content = event.target?.result as string;
-      const { games: importedGames, errors } = parseCSV(content);
+      const platformIds = (categories.length ? categories : DEFAULT_CATEGORIES).map((category) => category.id);
+      const { games: importedGames, errors } = parseCSV(content, platformIds);
 
       if (errors.length > 0) {
         toast.error(`Import errors: ${errors.length}`, {

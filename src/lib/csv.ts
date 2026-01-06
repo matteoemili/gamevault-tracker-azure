@@ -37,10 +37,20 @@ export function exportGamesToCSV(games: Game[]): string {
   return rows.join('\n');
 }
 
-export function parseCSV(csvContent: string): { games: Game[], errors: string[] } {
+export function parseCSV(
+  csvContent: string,
+  allowedPlatforms: string[]
+): { games: Game[], errors: string[] } {
   const lines = csvContent.split('\n').filter(line => line.trim());
   const errors: string[] = [];
   const games: Game[] = [];
+  const platformMap = new Map<string, Platform>();
+
+  allowedPlatforms.forEach((platform) => {
+    if (platform) {
+      platformMap.set(platform.trim().toUpperCase(), platform as Platform);
+    }
+  });
   
   if (lines.length === 0) {
     errors.push('CSV file is empty');
@@ -67,8 +77,13 @@ export function parseCSV(csvContent: string): { games: Game[], errors: string[] 
       continue;
     }
     
-    if (!['PS1', 'PS2', 'PS3', 'PSP', 'PC'].includes(platform)) {
-      errors.push(`Line ${lineNum}: Invalid platform "${platform}". Must be PS1, PS2, PS3, PSP, or PC`);
+    const normalizedPlatform = platform?.trim().toUpperCase();
+    const canonicalPlatform = normalizedPlatform ? platformMap.get(normalizedPlatform) : undefined;
+
+    if (!canonicalPlatform) {
+      const allowedList = Array.from(new Set(platformMap.values()));
+      const allowedLabel = allowedList.length > 0 ? allowedList.join(', ') : 'your configured categories';
+      errors.push(`Line ${lineNum}: Invalid platform "${platform}". Must match one of: ${allowedLabel}`);
       continue;
     }
     
@@ -78,7 +93,7 @@ export function parseCSV(csvContent: string): { games: Game[], errors: string[] 
     const game: Game = {
       id: crypto.randomUUID(),
       name: name.trim(),
-      platform: platform as Platform,
+       platform: canonicalPlatform,
       acquired: isAcquired,
       targetPrice: targetPrice ? parseFloat(targetPrice) : undefined,
       priority: isPriority || undefined,

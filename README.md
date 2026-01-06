@@ -2,6 +2,23 @@
 
 A modern web application for tracking your video game collection, built with React, TypeScript, and Azure Table Storage.
 
+## 🎯 Multi-Instance Deployment Support
+
+**NEW**: This application now supports multiple isolated instances! Each deployment can have its own:
+- ✅ Dedicated Azure resource group
+- ✅ Unique instance identifier
+- ✅ Independent data storage
+- ✅ Ability to redeploy to existing instances
+
+Perfect for:
+- Multiple environments (dev, staging, production)
+- Team member isolation
+- Feature testing
+- Customer demos
+- A/B testing
+
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed multi-instance deployment instructions.
+
 ## Features
 
 - 📚 **Collection Management**: Track games you own and games on your wishlist
@@ -123,6 +140,51 @@ src/
 - React hooks for state management
 
 ## Deployment
+
+### Quick Deploy (New Instance)
+
+Push to main branch to automatically create a new instance:
+
+```bash
+git add .
+git commit -m "Deploy new instance"
+git push origin main
+```
+
+The workflow will automatically:
+1. Generate a unique instance ID
+2. Create a dedicated resource group
+3. Deploy all Azure resources
+4. Build and deploy your application
+
+### Redeploy to Existing Instance
+
+Via GitHub Actions UI:
+1. Go to **Actions** tab
+2. Select **Azure Static Web Apps CI/CD**
+3. Click **Run workflow**
+4. Enter your instance ID (e.g., `abc12345`)
+5. Select environment (prod/dev/staging)
+6. Click **Run workflow**
+
+### Multi-Instance Management
+
+**View all instances**:
+```bash
+az group list --query "[?starts_with(name, 'rg-gamevault-')]" --output table
+```
+
+**Delete an instance**:
+```bash
+az group delete --name "rg-gamevault-{instanceId}" --yes
+```
+
+**Find your instance ID**:
+- Check deployment logs in GitHub Actions
+- Look at resource group tags in Azure Portal
+- Use: `az group show --name rg-gamevault-{id} --query tags.instanceId`
+
+For complete deployment documentation, see [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 ### Azure Static Web Apps
 

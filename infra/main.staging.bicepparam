@@ -1,16 +1,14 @@
 // ============================================================================
-// GameVault Tracker - Production Parameters
+// GameVault Tracker - Staging Environment Parameters
 // ============================================================================
-// This parameters file configures the production deployment.
-// For other environments, create additional .bicepparam files:
-// - main.dev.bicepparam
-// - main.staging.bicepparam
+// This parameters file configures the staging deployment.
+// Use this for pre-production testing and validation.
 // ============================================================================
 
 using './main.bicep'
 
 // Environment configuration
-param environment = 'prod'
+param environment = 'staging'
 param baseName = 'gamevault'
 
 // Instance identifier for multi-instance deployments
@@ -29,17 +27,15 @@ param repositoryUrl = ''
 param repositoryBranch = 'main'
 
 // CORS Configuration
-// Add your production domains here after deployment
-// The Static Web App URL will be added automatically
+// Staging environment typically includes localhost and staging domains
 param corsAllowedOrigins = [
-  // 'https://your-custom-domain.com'
-  // The Static Web App URL will need to be added after first deployment
+  // Add any additional staging origins here
 ]
 
 // Resource tags
 param tags = {
   application: 'GameVault Tracker'
-  environment: 'prod'
+  environment: 'staging'
   managedBy: 'Bicep'
   repository: 'gamevault-tracker-azure'
 }

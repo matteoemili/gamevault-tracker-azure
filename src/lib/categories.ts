@@ -25,5 +25,10 @@ export const DEFAULT_CATEGORIES: PlatformCategory[] = [
     id: 'PC',
     name: 'PC',
     logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/38/Pc_game_logo.png/600px-Pc_game_logo.png'
+  },
+  {
+    id: 'XBOX',
+    name: 'Xbox',
+    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/4/43/Xbox_Logo.svg'
   }
 ];
