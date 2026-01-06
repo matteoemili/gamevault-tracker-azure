@@ -1,5 +1,14 @@
 # Production Deployment Guide - Azure Static Web Apps
 
+## 🎯 Multi-Instance Deployment Support
+
+**This application now supports multiple isolated instances**, each with its own:
+- ✅ Dedicated resource group
+- ✅ Unique instance identifier
+- ✅ Isolated Azure resources (Storage Account, Static Web App)
+- ✅ Independent data storage
+- ✅ Ability to redeploy to existing instances
+
 ## ✅ Automated CI/CD Deployment
 
 **This application uses a fully automated CI/CD pipeline.** Environment variables are automatically injected during the build process:
@@ -8,16 +17,171 @@
 - ✅ Storage account names are **passed dynamically** from Bicep outputs
 - ✅ CORS settings are **automatically configured** for the deployed Static Web App URL
 - ✅ **No manual GitHub secrets management required**
+- ✅ Instance IDs are **generated or reused** automatically
 
 ### How It Works
 
-1. **Infrastructure Job**: Deploys Azure resources (storage account, static web app, tables)
-2. **Build Job**: Generates fresh SAS token and builds the application with injected variables
-3. **CORS Configuration**: Automatically adds the Static Web App URL to storage CORS rules
+1. **Instance Management**: Generates unique instance ID or uses provided ID for redeployment
+2. **Resource Group Creation**: Creates isolated resource group per instance
+3. **Infrastructure Job**: Deploys Azure resources (storage account, static web app, tables)
+4. **Build Job**: Generates fresh SAS token and builds the application with injected variables
+5. **CORS Configuration**: Automatically adds the Static Web App URL to storage CORS rules
 
 Vite environment variables are **baked into the JavaScript bundle at BUILD time**, not runtime.
 
-## Security Consideration
+## 🚀 Deployment Options
+
+### Option 1: Automatic Push-Based Deployment (Default)
+
+Simply push your code to the `main` branch to deploy a new instance:
+
+```bash
+git add .
+git commit -m "Your changes"
+git push origin main
+```
+
+**Result**: 
+- A new instance ID is automatically generated (8 random alphanumeric characters)
+- New resource group created: `rg-gamevault-{instanceId}`
+- All resources deployed with unique names
+
+### Option 2: Manual Workflow Dispatch (New Instance)
+
+Create a new instance on demand via GitHub Actions UI:
+
+1. Go to **Actions** tab in GitHub
+2. Select **Azure Static Web Apps CI/CD** workflow
+3. Click **Run workflow**
+4. Select environment (prod/dev/staging)
+5. Leave **Instance ID** empty for new instance
+6. Click **Run workflow**
+
+**Result**: New instance created with random ID
+
+### Option 3: Manual Workflow Dispatch (Redeploy Existing)
+
+Redeploy to an existing instance:
+
+1. Go to **Actions** tab in GitHub
+2. Select **Azure Static Web Apps CI/CD** workflow
+3. Click **Run workflow**
+4. Select environment
+5. **Enter the Instance ID** from previous deployment (e.g., `abc12345`)
+6. Click **Run workflow**
+
+**Result**: Updates existing instance with new code
+
+## 📋 Instance Management
+
+### Finding Your Instance ID
+
+After deployment completes, check the workflow logs for:
+
+```
+🎉 Deployment Complete!
+================================================
+
+📋 Instance Details:
+  Instance ID:     abc12345
+  Resource Group:  rg-gamevault-abc12345
+  Environment:     prod
+
+🌐 Resources:
+  Static Web App:  swa-gamevault-prod-abc12345
+  Storage Account: stgamevaultabc12345
+  Web App URL:     https://swa-gamevault-prod-abc12345.azurestaticapps.net
+
+♻️  To redeploy to this instance:
+  Use Instance ID: abc12345
+```
+
+### Viewing Instances in Azure Portal
+
+All instances are tagged with their instance ID:
+
+1. Open [Azure Portal](https://portal.azure.com)
+2. Navigate to **Resource Groups**
+3. Look for groups starting with `rg-gamevault-`
+4. Check the `instanceId` tag on each resource group
+
+### Listing Instances via CLI
+
+```bash
+# List all GameVault resource groups
+az group list \
+  --query "[?starts_with(name, 'rg-gamevault-')].{Name:name, InstanceId:tags.instanceId, Environment:tags.environment}" \
+  --output table
+
+# Get details for a specific instance
+INSTANCE_ID="abc12345"
+az group show \
+  --name "rg-gamevault-$INSTANCE_ID" \
+  --output table
+```
+
+## 🔄 Managing Multiple Instances
+
+### Use Cases
+
+1. **Multiple Environments**: Deploy separate dev, staging, and production instances
+2. **Feature Branches**: Create isolated instances for testing new features
+3. **Team Members**: Each developer can have their own instance
+4. **A/B Testing**: Run multiple versions simultaneously
+5. **Customer Demos**: Create dedicated demo instances
+
+### Example Workflow
+
+```bash
+# Deploy development instance
+# Via GitHub UI: Run workflow with environment=dev, empty instance ID
+# Result: Creates rg-gamevault-dev1234
+
+# Deploy production instance  
+# Via push to main or manual workflow with environment=prod
+# Result: Creates rg-gamevault-prod5678
+
+# Update development instance
+# Via GitHub UI: Run workflow with environment=dev, instance_id=dev1234
+# Result: Updates existing rg-gamevault-dev1234
+
+# Deploy feature testing instance
+# Via GitHub UI: Run workflow with environment=dev, empty instance ID
+# Result: Creates rg-gamevault-feat9abc
+```
+
+## 🧹 Cleanup and Resource Management
+
+### Deleting an Instance
+
+To completely remove an instance and all its resources:
+
+```bash
+# Via Azure Portal
+# 1. Go to Resource Groups
+# 2. Select the instance resource group (e.g., rg-gamevault-abc12345)
+# 3. Click "Delete resource group"
+# 4. Type the resource group name to confirm
+# 5. Click Delete
+
+# Via Azure CLI
+INSTANCE_ID="abc12345"
+az group delete \
+  --name "rg-gamevault-$INSTANCE_ID" \
+  --yes \
+  --no-wait
+```
+
+### Cost Estimation per Instance
+
+Each instance uses:
+- **Storage Account**: ~$0.01-0.10/month (Standard LRS, minimal data)
+- **Static Web App**: Free tier (no cost)
+- **Table Storage**: ~$0.05/10,000 transactions
+
+**Total estimated cost per instance**: < $1/month for typical usage
+
+## 🔐 Security Consideration
 
 ### ⚠️ DO NOT USE ACCOUNT KEYS IN PRODUCTION
 
@@ -26,43 +190,59 @@ Vite environment variables are **baked into the JavaScript bundle at BUILD time*
 - ✅ Expiration date (rotate regularly)
 - ✅ Revocable without changing account keys
 
-## Automated Deployment Process
+## 📝 Infrastructure Details
 
-### How to Deploy
+### Resource Naming Convention
 
-Simply push your code to the `main` branch:
+For instance ID `abc12345`:
 
-```bash
-git add .
-git commit -m "Your changes"
-git push origin main
+| Resource Type | Name Format | Example |
+|--------------|-------------|---------|
+| Resource Group | `rg-gamevault-{instanceId}` | `rg-gamevault-abc12345` |
+| Storage Account | `stgamevault{instanceId}` | `stgamevaultabc12345` |
+| Static Web App | `swa-gamevault-{env}-{instanceId}` | `swa-gamevault-prod-abc12345` |
+| Games Table | `games` | `games` |
+| Categories Table | `categories` | `categories` |
+
+### Tags Applied to Resources
+
+```json
+{
+  "application": "GameVault Tracker",
+  "environment": "prod|dev|staging",
+  "managedBy": "Bicep",
+  "instanceId": "abc12345"
+}
 ```
 
-The GitHub Actions workflow automatically:
+## 🛠️ Advanced Configuration
 
-1. **Deploys Infrastructure** (if needed)
-   - Creates/updates Azure Storage Account
-   - Creates/updates Azure Static Web App
-   - Creates game and category tables
+### Custom Instance ID
 
-2. **Configures CORS**
-   - Automatically adds the Static Web App URL to storage CORS rules
-   - Allows all HTTP methods (GET, POST, PUT, DELETE, OPTIONS, PATCH)
-   - Sets proper headers and max age (3600 seconds)
+You can specify a custom instance ID (useful for memorable names):
 
-3. **Generates SAS Token**
-   - Retrieves storage account key securely
-   - Generates a SAS token valid for 1 year
-   - Token has limited permissions (Table service only: Read, Add, Update, Delete)
+1. In GitHub Actions UI, enter a custom instance ID (8 characters max, lowercase alphanumeric)
+2. Example: `demo`, `test01`, `prod`
 
-4. **Builds Application**
-   - Creates `.env.production` with injected values
-   - Runs `npm run build` with environment variables
-   - Vite bakes the configuration into the JavaScript bundle
+**Note**: Use the same ID to redeploy to that instance
 
-5. **Deploys to Azure**
-   - Uploads the built application to Azure Static Web Apps
-   - Configures application settings (for future API functions if needed)
+### Environment-Specific Parameters
+
+Edit parameter files for different configurations:
+
+```bash
+# Production: infra/main.bicepparam
+param environment = 'prod'
+param staticWebAppSku = 'Free'
+
+# Development: infra/main.dev.bicepparam
+param environment = 'dev'
+param staticWebAppSku = 'Free'
+
+# Staging: infra/main.staging.bicepparam (create if needed)
+param environment = 'staging'
+param staticWebAppSku = 'Standard'
+```
 
 ### Required GitHub Secrets
 
@@ -70,116 +250,13 @@ Only one secret is required for the entire pipeline:
 
 - **`AZURE_CREDENTIALS_SPONSORSHIP`**: Azure service principal credentials for authentication
 
-All other configuration is handled automatically!
+All other configuration is handled automatically per instance!
 
-## Manual Configuration (Only if Needed)
+## 🧪 Testing Deployment
 
-### Generate a SAS Token Manually
+After deployment completes:
 
-**Note**: The CI/CD pipeline handles this automatically. Manual generation is only needed for local development or troubleshooting.
-
-#### Azure Portal
-
-1. Open [Azure Portal](https://portal.azure.com)
-2. Navigate to your Storage Account
-3. Go to **Security + networking** > **Shared access signature**
-4. Configure:
-   - **Allowed services**: ✅ Table only
-   - **Allowed resource types**: ✅ Service, ✅ Container, ✅ Object
-   - **Allowed permissions**: ✅ Read, ✅ Write, ✅ Delete, ✅ List, ✅ Add, ✅ Update
-   - **Start and expiry date/time**: Set expiry to 6-12 months
-   - **Allowed protocols**: HTTPS only
-5. Click **Generate SAS and connection string**
-6. Copy the **SAS token**
-
-### Manual CORS Configuration
-
-**Note**: The CI/CD pipeline configures CORS automatically. Manual configuration is only needed for troubleshooting.
-
-#### Azure Portal
-
-1. Go to your Storage Account
-2. **Settings** > **Resource sharing (CORS)**
-3. **Table service** tab
-4. Click **+ Add CORS rule**:
-   - **Allowed origins**: `https://ambitious-glacier-063139803.azurestaticapps.net`
-   - **Allowed methods**: GET, POST, PUT, DELETE, OPTIONS
-   - **Allowed headers**: `*`
-   - **Exposed headers**: `*`
-   - **Max age**: `3600`
-5. Click **Save**
-
-**Option B: Azure CLI (Mac)**
-
-```bash
-# Add production domain
-az storage cors add \
-  --account-name stvgcollection \
-  --services t \
-  --methods GET POST PUT DELETE OPTIONS \
-  --origins "https://ambitious-glacier-063139803.azurestaticapps.net" \
-  --allowed-headers "*" \
-  --exposed-headers "*" \
-  --max-age 3600
-
-# For development, you can add localhost too
-az storage cors add \
-  --account-name stvgcollection \
-  --services t \
-  --methods GET POST PUT DELETE OPTIONS \
-  --origins "http://localhost:5173" \
-  --allowed-headers "*" \
-  --exposed-headers "*" \
-  --max-age 3600
-```
-
-### 4. Verify GitHub Workflow Configuration
-
-The workflow has been updated to use environment variables during build. Verify it looks like this:
-
-```yaml
-env:
-  VITE_AZURE_STORAGE_ACCOUNT_NAME: ${{ secrets.VITE_AZURE_STORAGE_ACCOUNT_NAME }}
-  VITE_AZURE_STORAGE_SAS_TOKEN: ${{ secrets.VITE_AZURE_STORAGE_SAS_TOKEN }}
-```
-
-### 5. Deploy to Production
-
-#### Option A: Push to Main Branch
-
-```bash
-# Commit your changes
-git add .
-git commit -m "Configure Azure Storage for production"
-
-# Push to trigger deployment
-git push origin storage
-
-# Or push directly to main to trigger deployment
-git checkout main
-git merge storage
-git push origin main
-```
-
-#### Option B: Manual Trigger (GitHub UI)
-
-1. Go to **Actions** tab in GitHub
-2. Select the workflow
-3. Click **Run workflow**
-4. Select branch: `main`
-
-### 6. Monitor Deployment
-
-1. Go to **Actions** tab in GitHub
-2. Watch the build process
-3. Check for errors in the build logs
-4. Verify environment variables are being set:
-   - Look for `VITE_AZURE_STORAGE_ACCOUNT_NAME` in the build output
-   - You won't see the token value (GitHub masks secrets)
-
-### 7. Test Production Deployment
-
-1. Visit your Static Web App URL
+1. Visit the Static Web App URL from deployment logs
 2. Open browser Developer Tools (F12)
 3. Go to Console tab
 4. Add a game and watch for logs:
@@ -190,191 +267,84 @@ git push origin main
    ```
 5. Refresh the page - game should persist
 
-### 8. Troubleshooting Production Issues
+## 🐛 Troubleshooting
 
-#### Issue: "Cannot read properties of undefined (reading 'VITE_AZURE_STORAGE_ACCOUNT_NAME')"
+### Issue: "Cannot find instance ID from previous deployment"
 
-**Cause**: Environment variables not set during build
+**Solution**: Check GitHub Actions logs or Azure Portal tags to find the instance ID
 
-**Fix**:
-1. Verify GitHub Secrets are named correctly (exact names, case-sensitive)
-2. Check workflow YAML has the `env:` section
-3. Re-run the GitHub Action
+### Issue: "Resource group already exists"
 
-#### Issue: "CORS policy blocked" in production
+**Solution**: This is normal for redeployment - the workflow updates existing resources
+
+### Issue: "CORS policy blocked" in production
 
 **Cause**: Production domain not in CORS settings
 
-**Fix**:
-1. Get exact URL from browser address bar
-2. Add to CORS settings in Azure Portal
-3. Wait 1-2 minutes for CORS to propagate
-4. Clear browser cache and try again
+**Fix**: CORS is configured automatically, but if issues persist:
+```bash
+INSTANCE_ID="abc12345"
+STORAGE_ACCOUNT="stgamevault$INSTANCE_ID"
+WEB_APP_URL="https://swa-gamevault-prod-$INSTANCE_ID.azurestaticapps.net"
 
-#### Issue: "401 Unauthorized" in production
+az storage cors add \
+  --account-name "$STORAGE_ACCOUNT" \
+  --services t \
+  --methods GET POST PUT DELETE OPTIONS PATCH \
+  --origins "$WEB_APP_URL" \
+  --allowed-headers "*" \
+  --exposed-headers "*" \
+  --max-age 3600
+```
 
-**Cause**: SAS token not set or invalid
-
-**Fix**:
-1. Verify `VITE_AZURE_STORAGE_SAS_TOKEN` secret exists in GitHub
-2. Generate new SAS token
-3. Update GitHub Secret
-4. Re-run deployment
-
-#### Issue: Data works locally but not in production
-
-**Cause**: Different environment variables
+### Issue: Data not persisting
 
 **Check**:
-```bash
-# Local .env file
-cat .env
+1. Verify SAS token is valid (check deployment logs)
+2. Confirm CORS is configured correctly
+3. Check browser console for errors
 
-# Should have:
-VITE_AZURE_STORAGE_ACCOUNT_NAME=stvgcollection
-VITE_AZURE_STORAGE_SAS_TOKEN=sv=...
-```
+## 📊 Monitoring Multiple Instances
 
-**GitHub Secrets should have the SAME values**
-
-### 9. Verify Build Output (Mac)
-
-After the build completes, you can check the built files:
+### View All Instances
 
 ```bash
-# Build locally to test
-npm run build
+# List all resource groups
+az group list \
+  --query "[?starts_with(name, 'rg-gamevault-')].{Name:name, InstanceId:tags.instanceId, Env:tags.environment, Location:location}" \
+  --output table
 
-# Check that env vars are in the bundle (Mac)
-grep -r "stvgcollection" dist/assets/*.js
-
-# Should show the account name embedded in the JS files
+# Get costs per instance
+az consumption usage list \
+  --start-date 2024-01-01 \
+  --end-date 2024-01-31 \
+  --query "[?contains(instanceName, 'gamevault')]" \
+  --output table
 ```
 
-⚠️ **Note**: This also shows why you should NEVER use account keys - they'd be visible in the built JavaScript!
-
-### 10. Security Checklist
-
-- [ ] Using SAS token (NOT account key) ✅
-- [ ] SAS token has expiration date ✅
-- [ ] SAS token limited to Table service only ✅
-- [ ] CORS configured for specific production domain ✅
-- [ ] Secrets stored in GitHub (not in code) ✅
-- [ ] `.env` file in `.gitignore` ✅
-
-## Mac-Specific Commands
-
-### Install Tools (using Homebrew)
+### Health Checks
 
 ```bash
-# Install Homebrew (if not already installed)
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+# Check Static Web App status for an instance
+INSTANCE_ID="abc12345"
+RESOURCE_GROUP="rg-gamevault-$INSTANCE_ID"
 
-# Install Azure CLI
-brew install azure-cli
-
-# Install GitHub CLI (optional, for managing secrets)
-brew install gh
-
-# Login to GitHub CLI
-gh auth login
-
-# Add secrets via CLI (alternative to web UI)
-gh secret set VITE_AZURE_STORAGE_ACCOUNT_NAME --body "stvgcollection"
-gh secret set VITE_AZURE_STORAGE_SAS_TOKEN --body "sv=2024-11-04&ss=t..."
+az staticwebapp show \
+  --name "swa-gamevault-prod-$INSTANCE_ID" \
+  --resource-group "$RESOURCE_GROUP" \
+  --query "{Name:name, Status:sku.name, URL:defaultHostname}" \
+  --output table
 ```
 
-### Date Commands (Mac vs Linux)
+## 📚 Additional Resources
 
-```bash
-# Mac (BSD date)
-EXPIRY_DATE=$(date -u -v+1y '+%Y-%m-%dT%H:%MZ')  # 1 year from now
-EXPIRY_DATE=$(date -u -v+6m '+%Y-%m-%dT%H:%MZ')  # 6 months from now
-
-# Linux (GNU date)
-# EXPIRY_DATE=$(date -u -d "1 year" '+%Y-%m-%dT%H:%MZ')
-```
-
-### Check Build Output (Mac)
-
-```bash
-# Search built files for account name
-grep -r "stvgcollection" dist/assets/
-
-# Check file sizes
-du -sh dist/
-
-# List all built files
-find dist -type f -name "*.js"
-```
-
-## Common Mistakes
-
-1. ❌ Adding secrets to Azure Static Web Apps Configuration (doesn't work for Vite)
-2. ❌ Using account key in production (security risk)
-3. ❌ Forgetting to add production domain to CORS
-4. ❌ Typos in secret names (they're case-sensitive)
-5. ❌ Using `VITE_` prefix in Azure config but not in GitHub secrets
-
-## Quick Reference
-
-| Environment | Where to Set Variables | Method |
-|-------------|----------------------|---------|
-| **Local Dev** | `.env` file | Direct file |
-| **Production Build** | GitHub Secrets | GitHub Actions |
-| **NOT** Azure Static Web Apps Config | ❌ Doesn't work for Vite | N/A |
-
-## Testing the Deployment
-
-```bash
-# 1. Make a change
-echo "// test" >> src/App.tsx
-
-# 2. Commit and push
-git add .
-git commit -m "Test deployment"
-git push origin main
-
-# 3. Watch GitHub Actions
-# Visit: https://github.com/matteoemili/gamevault-tracker-azure/actions
-
-# 4. After deployment completes, test production site
-# Visit your Static Web App URL and test adding a game
-```
-
-## SAS Token Rotation (Security Best Practice)
-
-Schedule regular token rotation:
-
-```bash
-# Every 6 months, generate new token
-az storage account generate-sas \
-  --account-name stvgcollection \
-  --services t \
-  --resource-types sco \
-  --permissions rwdlacu \
-  --expiry $(date -u -v+6m '+%Y-%m-%dT%H:%MZ') \
-  --https-only \
-  --output tsv
-
-# Update GitHub Secret immediately
-gh secret set VITE_AZURE_STORAGE_SAS_TOKEN --body "<new-token>"
-
-# Trigger new deployment
-git commit --allow-empty -m "Rotate SAS token"
-git push origin main
-```
-
-## Support
-
-If issues persist:
-1. Check GitHub Actions logs for build errors
-2. Check browser console for runtime errors
-3. Verify CORS in Azure Portal
-4. Test SAS token with curl (see TROUBLESHOOTING.md)
+- [Azure Static Web Apps Documentation](https://docs.microsoft.com/azure/static-web-apps/)
+- [Azure Table Storage Documentation](https://docs.microsoft.com/azure/storage/tables/)
+- [Bicep Documentation](https://docs.microsoft.com/azure/azure-resource-manager/bicep/)
 
 ---
 
-**Last Updated**: 2025-10-23  
+**Last Updated**: 2026-01-06  
 **Platform**: Azure Static Web Apps  
-**Framework**: Vite + React
+**Framework**: Vite + React  
+**Multi-Instance Support**: ✅ Enabled

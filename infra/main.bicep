@@ -24,6 +24,11 @@ param environment string = 'prod'
 @maxLength(11)
 param baseName string = 'gamevault'
 
+@description('Instance identifier for multi-instance deployments. Leave empty to generate a new random ID.')
+@minLength(0)
+@maxLength(8)
+param instanceId string = ''
+
 @description('SKU for the Static Web App')
 @allowed(['Free', 'Standard'])
 param staticWebAppSku string = 'Free'
@@ -52,10 +57,14 @@ param tags object = {
 // Variables
 // ----------------------------------------------------------------------------
 
-// Generate unique names for resources
-var uniqueSuffix = uniqueString(resourceGroup().id, baseName)
-var storageAccountName = toLower('st${baseName}${uniqueSuffix}')
-var staticWebAppName = 'swa-${baseName}-${environment}-${uniqueSuffix}'
+// Generate instance identifier if not provided
+// Note: We can't use utcNow() here, so we rely on uniqueString with resourceGroup().id
+// For new deployments, pass empty instanceId and it will generate a unique one
+var effectiveInstanceId = empty(instanceId) ? toLower(substring(uniqueString(resourceGroup().id, baseName), 0, 8)) : toLower(instanceId)
+
+// Generate resource names using instance ID
+var storageAccountName = toLower(replace('st${baseName}${effectiveInstanceId}', '-', ''))
+var staticWebAppName = 'swa-${baseName}-${environment}-${effectiveInstanceId}'
 
 // Table names for the application
 var gamesTableName = 'games'
@@ -72,6 +81,11 @@ var defaultCorsOrigins = [
 // Merge default CORS with user-provided origins
 var effectiveCorsOrigins = empty(corsAllowedOrigins) ? defaultCorsOrigins : union(defaultCorsOrigins, corsAllowedOrigins)
 
+// Add instanceId to tags
+var effectiveTags = union(tags, {
+  instanceId: effectiveInstanceId
+})
+
 // ----------------------------------------------------------------------------
 // Resources
 // ----------------------------------------------------------------------------
@@ -80,7 +94,7 @@ var effectiveCorsOrigins = empty(corsAllowedOrigins) ? defaultCorsOrigins : unio
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: storageAccountName
   location: location
-  tags: tags
+  tags: effectiveTags
   kind: 'StorageV2'
   sku: {
     name: storageSkuName
@@ -146,7 +160,7 @@ resource categoriesTable 'Microsoft.Storage/storageAccounts/tableServices/tables
 resource staticWebApp 'Microsoft.Web/staticSites@2023-12-01' = {
   name: staticWebAppName
   location: location
-  tags: tags
+  tags: effectiveTags
   sku: {
     name: staticWebAppSku
     tier: staticWebAppSku
@@ -167,6 +181,9 @@ resource staticWebApp 'Microsoft.Web/staticSites@2023-12-01' = {
 // ----------------------------------------------------------------------------
 // Outputs
 // ----------------------------------------------------------------------------
+
+@description('The instance ID used for this deployment (for redeployment)')
+output instanceId string = effectiveInstanceId
 
 @description('The name of the Storage Account')
 output storageAccountName string = storageAccount.name

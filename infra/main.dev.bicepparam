@@ -3,6 +3,7 @@
 // ============================================================================
 // This parameters file configures the development deployment.
 // Use this for local development and testing.
+// Each developer can use their own instance ID for isolated testing.
 // ============================================================================
 
 using './main.bicep'
@@ -10,6 +11,12 @@ using './main.bicep'
 // Environment configuration
 param environment = 'dev'
 param baseName = 'gamevault'
+
+// Instance identifier for multi-instance deployments
+// Leave empty to generate a new random instance ID
+// For redeployment to existing instance, provide the instance ID from previous deployment
+// Example: param instanceId = 'abc12345'
+param instanceId = ''
 
 // Resource SKUs - use minimal SKUs for dev
 param staticWebAppSku = 'Free'

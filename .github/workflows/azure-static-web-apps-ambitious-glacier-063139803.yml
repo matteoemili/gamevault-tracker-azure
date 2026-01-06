@@ -9,15 +9,28 @@ on:
     types: [opened, synchronize, reopened, closed]
     branches:
       - main
-      - CORS-setup
+      - multi-instance
   workflow_dispatch:
+    inputs:
+      instance_id:
+        description: 'Instance ID for deployment (leave empty to generate new, or provide existing ID to redeploy)'
+        required: false
+        type: string
+        default: ''
+      environment:
+        description: 'Environment to deploy'
+        required: false
+        type: choice
+        options:
+          - prod
+          - dev
+          - staging
+        default: 'prod'
 
 # Environment variables for infrastructure deployment
 env:
-  AZURE_RESOURCE_GROUP: rg-gamevault-tracker
   AZURE_LOCATION: westeurope
   BICEP_FILE: infra/main.bicep
-  BICEP_PARAMS_FILE: infra/main.bicepparam
 
 jobs:
   # ============================================================================
@@ -28,6 +41,8 @@ jobs:
     runs-on: ubuntu-latest
     name: Deploy Infrastructure
     outputs:
+      instanceId: ${{ steps.set_instance.outputs.instanceId }}
+      resourceGroup: ${{ steps.set_instance.outputs.resourceGroup }}
       storageAccountName: ${{ steps.deploy.outputs.storageAccountName }}
       staticWebAppName: ${{ steps.deploy.outputs.staticWebAppName }}
       staticWebAppUrl: ${{ steps.deploy.outputs.staticWebAppUrl }}
@@ -36,6 +51,52 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Determine Instance ID and Environment
+        id: set_instance
+        run: |
+          # Determine environment
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            ENVIRONMENT="${{ inputs.environment }}"
+            INPUT_INSTANCE_ID="${{ inputs.instance_id }}"
+          else
+            ENVIRONMENT="prod"
+            INPUT_INSTANCE_ID=""
+          fi
+          
+          echo "Environment: $ENVIRONMENT"
+          
+          # Determine instance ID
+          if [ -n "$INPUT_INSTANCE_ID" ]; then
+            # Use provided instance ID (for redeployment)
+            INSTANCE_ID="$INPUT_INSTANCE_ID"
+            echo "♻️  Redeploying to existing instance: $INSTANCE_ID"
+          else
+            # Generate new instance ID (8 character random alphanumeric, lowercase)
+            INSTANCE_ID=$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w 8 | head -n 1)
+            echo "🆕 Generated new instance ID: $INSTANCE_ID"
+          fi
+          
+          # Set resource group name
+          RESOURCE_GROUP="rg-gamevault-${INSTANCE_ID}"
+          
+          echo "instanceId=$INSTANCE_ID" >> $GITHUB_OUTPUT
+          echo "resourceGroup=$RESOURCE_GROUP" >> $GITHUB_OUTPUT
+          echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
+          
+          # Set environment for subsequent steps
+          echo "AZURE_RESOURCE_GROUP=$RESOURCE_GROUP" >> $GITHUB_ENV
+          echo "DEPLOYMENT_ENVIRONMENT=$ENVIRONMENT" >> $GITHUB_ENV
+          echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
+          
+          # Determine bicep params file
+          if [ "$ENVIRONMENT" == "dev" ]; then
+            echo "BICEP_PARAMS_FILE=infra/main.dev.bicepparam" >> $GITHUB_ENV
+          elif [ "$ENVIRONMENT" == "staging" ]; then
+            echo "BICEP_PARAMS_FILE=infra/main.staging.bicepparam" >> $GITHUB_ENV
+          else
+            echo "BICEP_PARAMS_FILE=infra/main.bicepparam" >> $GITHUB_ENV
+          fi
+
       - name: Azure Login
         uses: azure/login@v2
         with:
@@ -43,28 +104,47 @@ jobs:
 
       - name: Create Resource Group
         run: |
+          echo "📦 Creating resource group: ${{ env.AZURE_RESOURCE_GROUP }}"
           az group create \
             --name ${{ env.AZURE_RESOURCE_GROUP }} \
             --location ${{ env.AZURE_LOCATION }} \
-            --tags application="GameVault Tracker" environment="prod" managedBy="GitHub Actions"
+            --tags \
+              application="GameVault Tracker" \
+              environment="${{ env.DEPLOYMENT_ENVIRONMENT }}" \
+              managedBy="GitHub Actions" \
+              instanceId="${{ env.INSTANCE_ID }}"
+          echo "✅ Resource group created"
 
       - name: Deploy Infrastructure
         id: deploy
         run: |
+          echo "🚀 Deploying infrastructure..."
+          echo "Instance ID: ${{ env.INSTANCE_ID }}"
+          echo "Environment: ${{ env.DEPLOYMENT_ENVIRONMENT }}"
+          echo "Resource Group: ${{ env.AZURE_RESOURCE_GROUP }}"
+          echo "Params File: ${{ env.BICEP_PARAMS_FILE }}"
+          
           DEPLOYMENT_OUTPUT=$(az deployment group create \
             --name "gamevault-${{ github.run_number }}" \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --template-file ${{ env.BICEP_FILE }} \
             --parameters ${{ env.BICEP_PARAMS_FILE }} \
+            --parameters instanceId=${{ env.INSTANCE_ID }} \
             --query 'properties.outputs' \
             --output json)
           
+          echo "📊 Deployment outputs:"
+          echo "$DEPLOYMENT_OUTPUT" | jq '.'
+          
           # Extract outputs for subsequent jobs
+          echo "instanceId=$(echo $DEPLOYMENT_OUTPUT | jq -r '.instanceId.value')" >> $GITHUB_OUTPUT
           echo "storageAccountName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.storageAccountName.value')" >> $GITHUB_OUTPUT
           echo "staticWebAppName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.staticWebAppName.value')" >> $GITHUB_OUTPUT
           echo "staticWebAppUrl=$(echo $DEPLOYMENT_OUTPUT | jq -r '.staticWebAppUrl.value')" >> $GITHUB_OUTPUT
           echo "gamesTableName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.gamesTableName.value')" >> $GITHUB_OUTPUT
           echo "categoriesTableName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.categoriesTableName.value')" >> $GITHUB_OUTPUT
+          
+          echo "✅ Infrastructure deployed successfully"
 
       - name: Configure Storage CORS
         run: |
@@ -86,6 +166,27 @@ jobs:
           
           echo "✅ CORS configured successfully"
 
+      - name: Display Deployment Summary
+        run: |
+          echo "=================================================="
+          echo "🎉 Deployment Complete!"
+          echo "=================================================="
+          echo ""
+          echo "📋 Instance Details:"
+          echo "  Instance ID:     ${{ steps.deploy.outputs.instanceId }}"
+          echo "  Resource Group:  ${{ env.AZURE_RESOURCE_GROUP }}"
+          echo "  Environment:     ${{ env.DEPLOYMENT_ENVIRONMENT }}"
+          echo ""
+          echo "🌐 Resources:"
+          echo "  Static Web App:  ${{ steps.deploy.outputs.staticWebAppName }}"
+          echo "  Storage Account: ${{ steps.deploy.outputs.storageAccountName }}"
+          echo "  Web App URL:     ${{ steps.deploy.outputs.staticWebAppUrl }}"
+          echo ""
+          echo "♻️  To redeploy to this instance:"
+          echo "  Use Instance ID: ${{ steps.deploy.outputs.instanceId }}"
+          echo ""
+          echo "=================================================="
+
   # ============================================================================
   # Build and Deploy Application Job
   # ============================================================================
@@ -97,6 +198,7 @@ jobs:
     env:
       STATIC_WEB_APP: ${{ needs.deploy_infrastructure.outputs.staticWebAppName }}
       STORAGE_ACCOUNT: ${{ needs.deploy_infrastructure.outputs.storageAccountName }}
+      AZURE_RESOURCE_GROUP: ${{ needs.deploy_infrastructure.outputs.resourceGroup }}
 
     steps:
         
@@ -221,21 +323,36 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS_SPONSORSHIP }}
 
-      - name: Get SWA Deployment Token
-        id: get_token
+      - name: Find and Close Staging Environment
+        id: find_swa
         run: |
-          SWA_NAME=$(az staticwebapp list --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query "[0].name" -o tsv)
-          if [ -z "$SWA_NAME" ]; then
-            echo "No Static Web App found. Skipping close."
-            exit 0
+          # In multi-instance setup, we need to find the correct resource group
+          # For PR closures, we'll use a default resource group or skip if not found
+          RESOURCE_GROUP="rg-gamevault-tracker"
+          
+          # Check if resource group exists
+          if az group exists --name "$RESOURCE_GROUP" | grep -q "true"; then
+            SWA_NAME=$(az staticwebapp list --resource-group $RESOURCE_GROUP --query "[0].name" -o tsv 2>/dev/null || echo "")
+            
+            if [ -n "$SWA_NAME" ]; then
+              echo "Found Static Web App: $SWA_NAME"
+              TOKEN=$(az staticwebapp secrets list --name $SWA_NAME --resource-group $RESOURCE_GROUP --query "properties.apiKey" -o tsv)
+              echo "::add-mask::$TOKEN"
+              echo "swa_token=$TOKEN" >> $GITHUB_OUTPUT
+              echo "found=true" >> $GITHUB_OUTPUT
+            else
+              echo "No Static Web App found in resource group"
+              echo "found=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "Resource group not found, skipping"
+            echo "found=false" >> $GITHUB_OUTPUT
           fi
-          TOKEN=$(az staticwebapp secrets list --name $SWA_NAME --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query "properties.apiKey" -o tsv)
-          echo "::add-mask::$TOKEN"
-          echo "swa_token=$TOKEN" >> $GITHUB_OUTPUT
 
       - name: Close Pull Request
+        if: steps.find_swa.outputs.found == 'true'
         id: closepullrequest
         uses: Azure/static-web-apps-deploy@v1
         with:
-          azure_static_web_apps_api_token: ${{ steps.get_token.outputs.swa_token }}
+          azure_static_web_apps_api_token: ${{ steps.find_swa.outputs.swa_token }}
           action: "close"

@@ -13,6 +13,12 @@ using './main.bicep'
 param environment = 'prod'
 param baseName = 'gamevault'
 
+// Instance identifier for multi-instance deployments
+// Leave empty to generate a new random instance ID
+// For redeployment to existing instance, provide the instance ID from previous deployment
+// Example: param instanceId = 'abc12345'
+param instanceId = ''
+
 // Resource SKUs
 param staticWebAppSku = 'Free'
 param storageSkuName = 'Standard_LRS'
