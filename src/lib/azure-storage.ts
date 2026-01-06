@@ -136,38 +136,64 @@ export class AzureTableStorageService {
     tableName: string,
     options?: QueryOptions
   ): Promise<T[]> {
-    let url = this.getTableUrl(tableName);
-    
-    const params: string[] = [];
-    if (options?.filter) {
-      params.push(`$filter=${encodeURIComponent(options.filter)}`);
-    }
-    if (options?.select) {
-      params.push(`$select=${options.select.join(',')}`);
-    }
-    if (options?.top) {
-      params.push(`$top=${options.top}`);
-    }
-    
-    if (params.length > 0) {
-      const separator = url.includes('?') ? '&' : '?';
-      url += separator + params.join('&');
-    }
+    const results: T[] = [];
+    let nextPartitionKey: string | undefined;
+    let nextRowKey: string | undefined;
+    let remaining = options?.top;
 
-    const headers = await this.getHeaders('GET', url);
+    do {
+      const urlObject = new URL(this.getTableUrl(tableName));
 
-    const response = await fetch(url, {
-      method: 'GET',
-      headers,
-    });
+      if (options?.filter) {
+        urlObject.searchParams.set('$filter', options.filter);
+      }
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to query entities: ${response.status} ${errorText}`);
-    }
+      if (options?.select) {
+        urlObject.searchParams.set('$select', options.select.join(','));
+      }
 
-    const data = await response.json();
-    return data.value || [];
+      if (remaining !== undefined) {
+        urlObject.searchParams.set('$top', String(remaining));
+      } else if (options?.top) {
+        urlObject.searchParams.set('$top', String(options.top));
+      }
+
+      if (nextPartitionKey) {
+        urlObject.searchParams.set('NextPartitionKey', nextPartitionKey);
+      }
+      if (nextRowKey) {
+        urlObject.searchParams.set('NextRowKey', nextRowKey);
+      }
+
+      const url = urlObject.toString();
+      const headers = await this.getHeaders('GET', url);
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to query entities: ${response.status} ${errorText}`);
+      }
+
+      const data = await response.json();
+      const page = (data.value || []) as T[];
+      results.push(...page);
+
+      if (remaining !== undefined) {
+        remaining -= page.length;
+        if (remaining <= 0) {
+          return results.slice(0, options!.top!);
+        }
+      }
+
+      nextPartitionKey = response.headers.get('x-ms-continuation-NextPartitionKey') || undefined;
+      nextRowKey = response.headers.get('x-ms-continuation-NextRowKey') || undefined;
+    } while ((nextPartitionKey || nextRowKey) && (remaining === undefined || remaining > 0));
+
+    return results;
   }
 
   /**
