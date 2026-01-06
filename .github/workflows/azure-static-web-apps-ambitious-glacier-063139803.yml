@@ -72,7 +72,7 @@ jobs:
             echo "♻️  Redeploying to existing instance: $INSTANCE_ID"
           else
             # Generate new instance ID (8 character random alphanumeric, lowercase)
-            INSTANCE_ID=$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w 8 | head -n 1)
+            INSTANCE_ID=$(openssl rand -hex 4)
             echo "🆕 Generated new instance ID: $INSTANCE_ID"
           fi
           
