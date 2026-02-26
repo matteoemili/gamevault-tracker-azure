@@ -43,6 +43,38 @@
   --radius: 0.5rem;
 }
 
+/* Dark mode overrides — must live here so they take effect after the :root
+   block above, which shares the same specificity (0-1-0). */
+.dark {
+  --background: oklch(0.13 0 0);
+  --foreground: oklch(0.95 0 0);
+
+  --card: oklch(0.18 0 0);
+  --card-foreground: oklch(0.95 0 0);
+
+  --popover: oklch(0.18 0 0);
+  --popover-foreground: oklch(0.95 0 0);
+
+  --primary: oklch(0.6 0.15 250);
+  --primary-foreground: oklch(1 0 0);
+
+  --secondary: oklch(0.22 0 0);
+  --secondary-foreground: oklch(0.9 0 0);
+
+  --muted: oklch(0.22 0 0);
+  --muted-foreground: oklch(0.65 0 0);
+
+  --accent: oklch(0.72 0.18 50);
+  --accent-foreground: oklch(0.1 0 0);
+
+  --destructive: oklch(0.65 0.25 25);
+  --destructive-foreground: oklch(0.95 0 0);
+
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(0.6 0.15 250);
+}
+
 @theme {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
