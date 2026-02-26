@@ -10,6 +10,7 @@ import { GameDialog } from '@/components/GameDialog';
 import { ImportExportMenu } from '@/components/ImportExportMenu';
 import { PlatformCategory } from '@/components/CategoryDialog';
 import { DEFAULT_CATEGORIES } from '@/lib/categories';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { Plus, MagnifyingGlass, FunnelSimple } from '@phosphor-icons/react';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
@@ -128,6 +129,7 @@ function App() {
           <div className="flex items-center justify-between mb-6">
             <h1 className="text-4xl font-bold tracking-tight">Video Game Collection</h1>
             <div className="flex gap-2">
+              <ThemeToggle />
               <ImportExportMenu 
                 games={games || []} 
                 onImport={handleImport}
