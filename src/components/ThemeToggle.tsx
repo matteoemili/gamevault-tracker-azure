@@ -29,7 +29,6 @@ export function ThemeToggle() {
           <Moon aria-hidden="true" className="size-4" />
         )
       ) : null}
-      <span className="sr-only">{nextThemeLabel}</span>
     </Button>
   );
 }
