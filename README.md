@@ -30,6 +30,17 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed multi-instance deployment inst
 - 📤 **Import/Export**: Backup and restore your collection data
 - ☁️ **Cloud Storage**: Data stored in Azure Table Storage for access anywhere
 
+## Potential Enhancements
+
+- 🧾 **Metadata Enrichment**: Auto-fetch cover art, release dates, and genres from game databases
+- 👥 **User Accounts**: Optional authentication to support shared instances and multi-user collections
+- 🔔 **Price Alerts**: Notify when a game drops below a target price or hits a sale threshold
+- 📈 **Collection Insights**: Charts for spend totals, completion rate, and platform breakdowns
+- 🗂️ **Custom Tags**: Add user-defined tags for genres, backlog, or special collections
+- 🤝 **Lending Tracking**: Track borrowed/loaned games with due dates and notes
+- 📱 **Mobile-friendly Views**: Dedicated compact layouts for quick entry on phones
+- 🔗 **Shareable Lists**: Generate read-only links for wishlists or curated collections
+
 ## Technology Stack
 
 - **Frontend**: React 18 + TypeScript + Vite
