@@ -1,0 +1,375 @@
+/* ============================================================
+   GameVault Tracker — Theme Definitions
+   Variables are set on html[data-theme] so they cascade to
+   body and every child element (fixes dark mode backgrounds).
+   Component-level overrides target [data-theme] selectors.
+   ============================================================ */
+
+[data-slot="card"] { transition: all 0.2s ease; }
+
+/* ═══════════════════════════════════════════════════════════════
+   1. CLEAN MINIMAL — White/Indigo, editorial, ultra-breathing
+   ═══════════════════════════════════════════════════════════════ */
+html[data-theme="clean-minimal"] {
+  --background: #ffffff;
+  --foreground: #0f0f0f;
+  --card: #fafafa;
+  --card-foreground: #0f0f0f;
+  --popover: #ffffff;
+  --popover-foreground: #0f0f0f;
+  --primary: #4338ca;
+  --primary-foreground: #ffffff;
+  --secondary: #eef2ff;
+  --secondary-foreground: #3730a3;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --accent: #e0e7ff;
+  --accent-foreground: #3730a3;
+  --destructive: #dc2626;
+  --border: #e4e4e7;
+  --input: #f4f4f5;
+  --ring: #6366f1;
+  --radius: 0.75rem;
+}
+html[data-theme="clean-minimal"].dark {
+  --background: #09090b;
+  --foreground: #fafafa;
+  --card: #18181b;
+  --card-foreground: #fafafa;
+  --popover: #18181b;
+  --popover-foreground: #fafafa;
+  --primary: #818cf8;
+  --primary-foreground: #1e1b4b;
+  --secondary: #27272a;
+  --secondary-foreground: #a1a1aa;
+  --muted: #27272a;
+  --muted-foreground: #a1a1aa;
+  --accent: #3730a3;
+  --accent-foreground: #e0e7ff;
+  --destructive: #f87171;
+  --border: #27272a;
+  --input: #27272a;
+  --ring: #6366f1;
+}
+
+[data-theme="clean-minimal"] [data-slot="card"].game-card {
+  border: 1px solid #e4e4e7;
+  border-radius: 12px;
+  box-shadow: none;
+}
+[data-theme="clean-minimal"] [data-slot="card"].game-card:hover {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.08), 0 4px 24px rgba(99,102,241,0.06);
+}
+[data-theme="clean-minimal"].dark [data-slot="card"].game-card {
+  border-color: #27272a;
+  background: #18181b;
+}
+[data-theme="clean-minimal"].dark [data-slot="card"].game-card:hover {
+  border-color: #818cf8;
+  box-shadow: 0 0 0 3px rgba(129,140,248,0.1), 0 4px 24px rgba(129,140,248,0.08);
+}
+[data-theme="clean-minimal"] [data-slot="badge"] {
+  border-radius: 9999px;
+  font-weight: 500;
+  font-size: 11px;
+  padding: 2px 10px;
+  letter-spacing: 0.02em;
+}
+[data-theme="clean-minimal"] [data-slot="button"] { border-radius: 9999px; }
+
+
+/* ═══════════════════════════════════════════════════════════════
+   2. NEON ARCADE — Dark cyberpunk terminal
+   ═══════════════════════════════════════════════════════════════ */
+html[data-theme="neon-arcade"] {
+  --background: #08070f;
+  --foreground: #e8e0ff;
+  --card: #0f0d1a;
+  --card-foreground: #e8e0ff;
+  --popover: #0f0d1a;
+  --popover-foreground: #e8e0ff;
+  --primary: #a78bfa;
+  --primary-foreground: #0a0714;
+  --secondary: #1a1730;
+  --secondary-foreground: #c4b5fd;
+  --muted: #141222;
+  --muted-foreground: #7c6faa;
+  --accent: #38bdf8;
+  --accent-foreground: #0f0d1a;
+  --destructive: #f87171;
+  --border: rgba(167,139,250,0.25);
+  --input: #1a1730;
+  --ring: #a78bfa;
+  --radius: 0.25rem;
+}
+/* Neon has no meaningful "light" mode — use a slightly brighter dark */
+html[data-theme="neon-arcade"]:not(.dark) {
+  --background: #1a1730;
+  --foreground: #e8e0ff;
+  --card: #221f3a;
+  --border: rgba(167,139,250,0.35);
+  --muted: #2a2548;
+  --muted-foreground: #9d8ccc;
+  --input: #2a2548;
+}
+
+/* Dot-grid texture on the full-page background */
+[data-theme="neon-arcade"] .min-h-screen {
+  background-image: radial-gradient(rgba(167,139,250,0.1) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+[data-theme="neon-arcade"] [data-slot="card"].game-card {
+  background: linear-gradient(135deg, rgba(167,139,250,0.06) 0%, rgba(56,189,248,0.03) 100%);
+  border: 1px solid rgba(167,139,250,0.3);
+  border-radius: 4px;
+  box-shadow: inset 0 1px 0 rgba(167,139,250,0.1);
+  position: relative;
+  overflow: hidden;
+}
+[data-theme="neon-arcade"] [data-slot="card"].game-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(167,139,250,0.6), transparent);
+}
+[data-theme="neon-arcade"] [data-slot="card"].game-card:hover {
+  border-color: rgba(167,139,250,0.8);
+  box-shadow:
+    0 0 0 1px rgba(167,139,250,0.4),
+    0 0 20px rgba(167,139,250,0.25),
+    0 0 60px rgba(167,139,250,0.08),
+    inset 0 1px 0 rgba(167,139,250,0.15);
+}
+[data-theme="neon-arcade"] [data-slot="badge"] {
+  border-radius: 2px;
+  font-family: ui-monospace, 'Cascadia Code', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  border-width: 1px;
+  border-style: solid;
+  padding: 2px 8px;
+}
+[data-theme="neon-arcade"] [data-slot="button"] {
+  border-radius: 3px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+[data-theme="neon-arcade"] input,
+[data-theme="neon-arcade"] [role="combobox"] {
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+  background: #1a1730 !important;
+  border-color: rgba(167,139,250,0.3) !important;
+  color: #e8e0ff !important;
+  border-radius: 3px;
+}
+[data-theme="neon-arcade"] input:focus {
+  border-color: #a78bfa !important;
+  box-shadow: 0 0 0 2px rgba(167,139,250,0.2) !important;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   3. RETRO COLLECTOR — Warm vintage parchment
+   ═══════════════════════════════════════════════════════════════ */
+html[data-theme="retro-collector"] {
+  --background: #f5edd8;
+  --foreground: #2c1810;
+  --card: #fdf6e3;
+  --card-foreground: #2c1810;
+  --popover: #fdf6e3;
+  --popover-foreground: #2c1810;
+  --primary: #b45309;
+  --primary-foreground: #fffbeb;
+  --secondary: #fde68a;
+  --secondary-foreground: #78350f;
+  --muted: #e9d5a1;
+  --muted-foreground: #78350f;
+  --accent: #d97706;
+  --accent-foreground: #fffbeb;
+  --destructive: #991b1b;
+  --border: #c5a572;
+  --input: #fde68a;
+  --ring: #b45309;
+  --radius: 0.25rem;
+}
+html[data-theme="retro-collector"].dark {
+  --background: #1c1108;
+  --foreground: #fde68a;
+  --card: #251709;
+  --card-foreground: #fde68a;
+  --popover: #251709;
+  --popover-foreground: #fde68a;
+  --primary: #f59e0b;
+  --primary-foreground: #1c1108;
+  --secondary: #3d2b0e;
+  --secondary-foreground: #fde68a;
+  --muted: #2f1f0a;
+  --muted-foreground: #d97706;
+  --accent: #f59e0b;
+  --accent-foreground: #1c1108;
+  --destructive: #fca5a5;
+  --border: rgba(197,165,114,0.35);
+  --input: #3d2b0e;
+  --ring: #f59e0b;
+}
+
+/* Override the retro header background to always match the theme background */
+[data-theme="retro-collector"] header {
+  background: var(--background) !important;
+  border-color: var(--border) !important;
+}
+
+[data-theme="retro-collector"] [data-slot="card"].game-card {
+  background: var(--card);
+  border: 2px solid var(--border);
+  border-radius: 2px;
+  box-shadow: 3px 3px 0 var(--border), 4px 4px 0 rgba(0,0,0,0.08);
+  position: relative;
+}
+[data-theme="retro-collector"] [data-slot="card"].game-card::after {
+  content: '';
+  position: absolute;
+  top: 4px; left: 4px;
+  right: -4px; bottom: -4px;
+  border: 1px solid rgba(197,165,114,0.25);
+  border-radius: 2px;
+  z-index: -1;
+}
+[data-theme="retro-collector"] [data-slot="card"].game-card:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 var(--primary), 6px 6px 0 rgba(0,0,0,0.12);
+}
+[data-theme="retro-collector"] [data-slot="badge"] {
+  border-radius: 2px;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  border: 2px solid currentColor;
+  padding: 2px 6px;
+  background: transparent;
+  color: var(--primary);
+}
+[data-theme="retro-collector"] [data-slot="button"] {
+  border-radius: 2px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+[data-theme="retro-collector"] [data-slot="button"]:not([class*="ghost"]):hover {
+  transform: translate(-1px, -1px);
+}
+[data-theme="retro-collector"] input {
+  border: 2px solid var(--border) !important;
+  border-radius: 2px;
+  background: #fffbeb;
+  font-family: Georgia, serif;
+}
+[data-theme="retro-collector"].dark input {
+  background: var(--input) !important;
+  color: var(--foreground) !important;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   4. DASHBOARD PRO — Professional tool, GitHub-dark inspired
+   ═══════════════════════════════════════════════════════════════ */
+html[data-theme="dashboard-pro"] {
+  --background: #f6f8fa;
+  --foreground: #0d1117;
+  --card: #ffffff;
+  --card-foreground: #0d1117;
+  --popover: #ffffff;
+  --popover-foreground: #0d1117;
+  --primary: #0ea5e9;
+  --primary-foreground: #ffffff;
+  --secondary: #f3f4f6;
+  --secondary-foreground: #4b5563;
+  --muted: #f3f4f6;
+  --muted-foreground: #6b7280;
+  --accent: #0ea5e9;
+  --accent-foreground: #ffffff;
+  --destructive: #ef4444;
+  --border: #e5e7eb;
+  --input: #f9fafb;
+  --ring: #0ea5e9;
+  --radius: 0.375rem;
+}
+html[data-theme="dashboard-pro"].dark {
+  --background: #0d1117;
+  --foreground: #e6edf3;
+  --card: #161b22;
+  --card-foreground: #e6edf3;
+  --popover: #1c2128;
+  --popover-foreground: #e6edf3;
+  --primary: #58a6ff;
+  --primary-foreground: #0d1117;
+  --secondary: #21262d;
+  --secondary-foreground: #8b949e;
+  --muted: #21262d;
+  --muted-foreground: #8b949e;
+  --accent: #2dd4bf;
+  --accent-foreground: #0d1117;
+  --destructive: #f85149;
+  --border: rgba(255,255,255,0.08);
+  --input: #21262d;
+  --ring: #58a6ff;
+}
+
+[data-theme="dashboard-pro"] [data-slot="card"].game-card {
+  border: 1px solid var(--border);
+  border-left: 4px solid #6b7280;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  padding: 12px 16px !important;
+}
+[data-theme="dashboard-pro"] [data-slot="card"].game-card.status-owned { border-left-color: #10b981; }
+[data-theme="dashboard-pro"] [data-slot="card"].game-card.status-wanted { border-left-color: #f59e0b; }
+[data-theme="dashboard-pro"] [data-slot="card"].game-card.status-priority { border-left-color: #ef4444; }
+[data-theme="dashboard-pro"] [data-slot="card"].game-card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  transform: translateX(2px);
+}
+[data-theme="dashboard-pro"].dark [data-slot="card"].game-card {
+  background: #161b22;
+  border-color: rgba(255,255,255,0.07);
+}
+[data-theme="dashboard-pro"].dark [data-slot="card"].game-card:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  background: #1c2128;
+}
+[data-theme="dashboard-pro"].dark [data-slot="card"].game-card.status-owned { border-left-color: #2dd4bf; }
+[data-theme="dashboard-pro"].dark [data-slot="card"].game-card.status-wanted { border-left-color: #fbbf24; }
+[data-theme="dashboard-pro"].dark [data-slot="card"].game-card.status-priority { border-left-color: #f85149; }
+[data-theme="dashboard-pro"] [data-slot="badge"] {
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: ui-monospace, monospace;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border: 1px solid currentColor;
+  background: transparent;
+}
+[data-theme="dashboard-pro"] [data-slot="button"] {
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+}
+[data-theme="dashboard-pro"] input { font-size: 13px; }
+
+
+/* ─── SHARED STATS BAR ──────────────────────────────────────── */
+.stats-bar { display: flex; gap: 1.25rem; flex-wrap: wrap; }
+.stats-bar-item { display: flex; align-items: center; gap: 0.375rem; font-size: 0.8125rem; color: var(--muted-foreground); }
+.stats-bar-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
