@@ -1,13 +1,13 @@
 /**
  * Cover art resolution via serial number.
  *
- * Supported platforms: PS1, PS2, PS3, PSP.
- * For any other platform the function returns null and the caller should
- * display a neutral placeholder instead.
+ * Confirmed cover sources (community-maintained GitHub repos by xlenore):
+ *   PS1 → https://github.com/xlenore/psx-covers  (covers/default/<SERIAL>.jpg)
+ *   PS2 → https://github.com/xlenore/ps2-covers  (covers/default/<SERIAL>.jpg)
  *
- * URL patterns use the community-maintained GitHub repositories that mirror
- * the PSXDataCenter cover archive, organized by serial. These are the same
- * sources used by PCSX2 and common emulator frontends.
+ * Images are fetched directly by the browser — nothing is saved locally.
+ * For any other platform, buildCoverUrl returns null and the <CoverImage>
+ * component shows a neutral placeholder instead.
  *
  * NOTE: If a serial resolves to a 404 (the cover simply isn't in the
  * repository yet) the <CoverImage> component handles that gracefully via its
@@ -33,21 +33,16 @@ function normaliseSerial(raw: string): string {
 }
 
 /**
- * URL templates per platform family.
- * All constants are co-located here so a URL correction only touches one place.
- *
- * The repositories are organised as:
- *   covers/<SERIAL>.jpg  (default/front cover, consistent across the repos)
+ * URL templates per confirmed platform.
+ * Only repos verified to exist under the xlenore GitHub account are listed.
+ * PS3 and PSP repos do not exist under this author — those platforms
+ * will return null and the caller falls back to the placeholder.
  */
 const COVER_URL_TEMPLATES: Record<string, (serial: string) => string> = {
   PS1: (serial) =>
     `https://raw.githubusercontent.com/xlenore/psx-covers/main/covers/default/${serial}.jpg`,
   PS2: (serial) =>
     `https://raw.githubusercontent.com/xlenore/ps2-covers/main/covers/default/${serial}.jpg`,
-  PS3: (serial) =>
-    `https://raw.githubusercontent.com/xlenore/ps3-covers/main/covers/default/${serial}.jpg`,
-  PSP: (serial) =>
-    `https://raw.githubusercontent.com/xlenore/psp-covers/main/covers/default/${serial}.jpg`,
 };
 
 /**

@@ -52,7 +52,8 @@ interface CardProps {
   platformName: string;
   category: PlatformCategory | undefined;
   statusClass: string;
-  // Accepts null as well as undefined to match the null-safe helper.\n  formatPrice?: (p: number | undefined | null) => string;
+  // Accepts null as well as undefined to match the null-safe helper.
+  formatPrice?: (p: number | undefined | null) => string;
 }
 
 /* ─── 1. Clean Minimal ───────────────────────────────────────── */

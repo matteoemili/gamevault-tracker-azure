@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, CSSProperties } from 'react';
 import { buildCoverUrl } from '@/lib/covers';
 import placeholderSrc from '@/assets/cover-placeholder.svg';
 
@@ -9,6 +9,8 @@ interface CoverImageProps {
   /** Accessible alt text for the image. */
   alt: string;
   className?: string;
+  /** Additional inline styles merged with the base objectFit/display rules. */
+  style?: CSSProperties;
 }
 
 /**
@@ -22,7 +24,7 @@ interface CoverImageProps {
  * is required here.  The <img> element is used (not a <fetch> call) so that
  * requests to third-party image repos don't trigger CORS preflight issues.
  */
-export function CoverImage({ platform, serial, alt, className }: CoverImageProps) {
+export function CoverImage({ platform, serial, alt, className, style }: CoverImageProps) {
   // Start in the error state when no serial or no matching URL template exists.
   const candidateUrl = serial ? buildCoverUrl(platform, serial) : null;
   const [imgSrc, setImgSrc] = useState<string>(candidateUrl ?? placeholderSrc);
@@ -46,7 +48,9 @@ export function CoverImage({ platform, serial, alt, className }: CoverImageProps
       className={className}
       // Show the serial as a tooltip so users can verify what was used.
       title={serial ? `Serial: ${serial}` : 'No serial — showing placeholder'}
-      style={{ objectFit: 'cover', display: 'block' }}
+      // Merge caller-provided styles with the base rules so e.g. RetroCard's
+      // border treatment is applied alongside the required objectFit/display.
+      style={{ objectFit: 'cover', display: 'block', ...style }}
     />
   );
 }
