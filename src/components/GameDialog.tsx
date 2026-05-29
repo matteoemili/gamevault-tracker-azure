@@ -53,9 +53,13 @@ export function GameDialog({ open, onOpenChange, onSave, game, categories }: Gam
       // Store undefined (not empty string) so Azure Table entities stay clean.
       serial: formData.serial?.trim() || undefined,
       acquired: formData.acquired || false,
-      targetPrice: formData.targetPrice,
+      // Use ?? undefined to normalise any null that may have arrived from
+      // Azure Table Storage JSON round-trips (JSON preserves null; TypeScript
+      // optional fields expect undefined). This prevents null from being
+      // written back and avoids the .toFixed(null) crash in the cards.
+      targetPrice: formData.targetPrice ?? undefined,
       priority: formData.priority,
-      purchasePrice: formData.purchasePrice,
+      purchasePrice: formData.purchasePrice ?? undefined,
       acquisitionDate: formData.acquisitionDate,
       seller: formData.seller,
       notes: formData.notes

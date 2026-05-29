@@ -20,8 +20,11 @@ interface GameCardProps {
 export function GameCard({ game, onEdit, onDelete, categories }: GameCardProps) {
   const { theme } = useTheme();
 
-  const formatPrice = (price: number | undefined) =>
-    price === undefined || price === 0 ? 'Untracked' : `£${price.toFixed(2)}`;
+  // Use loose equality (== null) so that both undefined and null — which can
+  // appear when JSON from Azure storage round-trips optional fields — are
+  // treated as "not set" without crashing .toFixed().
+  const formatPrice = (price: number | undefined | null) =>
+    price == null || price === 0 ? 'Untracked' : `£${price.toFixed(2)}`;
 
   const category = categories.find(c => c.id === game.platform);
   const platformName = category?.name ?? game.platform;
@@ -49,7 +52,7 @@ interface CardProps {
   platformName: string;
   category: PlatformCategory | undefined;
   statusClass: string;
-  formatPrice?: (p: number | undefined) => string;
+  // Accepts null as well as undefined to match the null-safe helper.\n  formatPrice?: (p: number | undefined | null) => string;
 }
 
 /* ─── 1. Clean Minimal ───────────────────────────────────────── */
@@ -83,7 +86,7 @@ function MinimalCard({ game, onEdit, onDelete, platformName, category, statusCla
             )}
           </div>
           <div className="text-sm text-muted-foreground space-y-0.5">
-            {!game.acquired && game.targetPrice !== undefined && (
+            {!game.acquired && game.targetPrice != null && (
               <p>Target: <span className="text-foreground font-medium">£{game.targetPrice.toFixed(2)}</span></p>
             )}
             {game.acquired && (
@@ -138,10 +141,10 @@ function NeonCard({ game, onEdit, onDelete, platformName, statusClass }: CardPro
                 {game.acquired ? '✓ ACQUIRED' : game.priority ? '⚡ PRIORITY' : '◈ HUNTING'}
               </span>
             </div>
-            {game.acquired && game.purchasePrice !== undefined && (
+            {game.acquired && game.purchasePrice != null && (
               <div><span className="opacity-50">COST:</span> <span className="text-primary">£{game.purchasePrice.toFixed(2)}</span></div>
             )}
-            {!game.acquired && game.targetPrice !== undefined && (
+            {!game.acquired && game.targetPrice != null && (
               <div><span className="opacity-50">BUDGET:</span> <span className="text-primary">£{game.targetPrice.toFixed(2)}</span></div>
             )}
             {game.acquisitionDate && (
@@ -207,7 +210,7 @@ function RetroCard({ game, onEdit, onDelete, platformName, category, statusClass
             )}
           </div>
           <div className="text-sm space-y-0.5" style={{ color: 'var(--muted-foreground)' }}>
-            {!game.acquired && game.targetPrice !== undefined && (
+            {!game.acquired && game.targetPrice != null && (
               <p>Target Price — <strong>£{game.targetPrice.toFixed(2)}</strong></p>
             )}
             {game.acquired && (
@@ -235,6 +238,8 @@ function RetroCard({ game, onEdit, onDelete, platformName, category, statusClass
 
 /* ─── 4. Dashboard Pro ───────────────────────────────────────── */
 function CompactCard({ game, onEdit, onDelete, platformName, category, statusClass, formatPrice }: CardProps) {
+  // Re-use the same null-safe helper from the parent by accepting it as a prop.
+  // If somehow it isn't passed, fall back to a simple inline guard.
   const dotColor = game.acquired ? '#10b981' : game.priority ? '#ef4444' : '#f59e0b';
 
   return (
@@ -260,10 +265,10 @@ function CompactCard({ game, onEdit, onDelete, platformName, category, statusCla
               </div>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-xs font-mono" style={{ color: 'var(--muted-foreground)' }}>{platformName}</span>
-                {game.acquired && game.purchasePrice !== undefined && (
+                {game.acquired && game.purchasePrice != null && (
                   <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>· £{game.purchasePrice.toFixed(2)}</span>
                 )}
-                {!game.acquired && game.targetPrice !== undefined && (
+                {!game.acquired && game.targetPrice != null && (
                   <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>· target £{game.targetPrice.toFixed(2)}</span>
                 )}
                 {game.acquisitionDate && (
