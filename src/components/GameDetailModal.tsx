@@ -42,13 +42,15 @@ export function GameDetailModal({ game, onClose, categories }: GameDetailModalPr
         <div className="flex flex-col sm:flex-row">
 
           {/* ── Left: large cover ──────────────────────────────── */}
+          {/* No forced aspect ratio — the image renders at its natural dimensions
+              so square, portrait, or landscape covers all display correctly. */}
           <div className="sm:w-56 flex-shrink-0 bg-muted/40 flex items-center justify-center p-6">
             <CoverImage
               platform={game.platform}
               serial={game.serial}
               alt={`${game.name} cover`}
-              className="w-full max-w-[160px] sm:max-w-none rounded shadow-lg"
-              style={{ aspectRatio: '2/3', objectFit: 'cover' }}
+              className="w-full rounded shadow-lg"
+              style={{ objectFit: 'contain', maxHeight: '280px' }}
             />
           </div>
 
