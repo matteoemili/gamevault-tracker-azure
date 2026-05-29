@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 112" fill="none">
+  <!-- Neutral cover placeholder: dark rectangle with a subtle disc icon -->
+  <rect width="80" height="112" rx="4" fill="#1e1e2e" opacity="0.7"/>
+  <rect x="1" y="1" width="78" height="110" rx="3" stroke="#ffffff" stroke-opacity="0.08"/>
+  <!-- Disc ring -->
+  <circle cx="40" cy="54" r="20" stroke="#ffffff" stroke-opacity="0.18" stroke-width="1.5"/>
+  <circle cx="40" cy="54" r="6" stroke="#ffffff" stroke-opacity="0.18" stroke-width="1.5"/>
+  <circle cx="40" cy="54" r="2" fill="#ffffff" fill-opacity="0.18"/>
+  <!-- Label text -->
+  <text x="40" y="92" text-anchor="middle" font-family="sans-serif"
+        font-size="7" fill="#ffffff" fill-opacity="0.3" letter-spacing="0.5">NO COVER</text>
+</svg>

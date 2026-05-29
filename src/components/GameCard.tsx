@@ -1,8 +1,10 @@
+import React from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Game } from '@/lib/types';
 import { PlatformLogo } from './PlatformLogo';
+import { CoverImage } from './CoverImage';
 import { PlatformCategory } from './CategoryDialog';
 import { Pencil, Trash, Star } from '@phosphor-icons/react';
 import { format } from 'date-fns';
@@ -55,6 +57,13 @@ function MinimalCard({ game, onEdit, onDelete, platformName, category, statusCla
   return (
     <Card className={`p-6 game-card ${statusClass}`}>
       <div className="flex items-start justify-between gap-4">
+        {/* Cover thumbnail — falls back to placeholder when no serial is set */}
+        <CoverImage
+          platform={game.platform}
+          serial={game.serial}
+          alt={`${game.name} cover`}
+          className="w-12 h-16 rounded flex-shrink-0"
+        />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-3">
             <PlatformLogo platform={game.platform} size="sm" logoUrl={category?.logoUrl} />
@@ -107,6 +116,13 @@ function NeonCard({ game, onEdit, onDelete, platformName, statusClass }: CardPro
   return (
     <Card className={`p-5 game-card ${statusClass}`}>
       <div className="flex items-start justify-between gap-3">
+        {/* Cover thumbnail */}
+        <CoverImage
+          platform={game.platform}
+          serial={game.serial}
+          alt={`${game.name} cover`}
+          className="w-10 h-14 rounded flex-shrink-0 opacity-80"
+        />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-3">
             <span className="text-primary font-mono text-xs opacity-50">[{platformName.toUpperCase().replace(/\s/g, '_')}]</span>
@@ -157,6 +173,14 @@ function RetroCard({ game, onEdit, onDelete, platformName, category, statusClass
   return (
     <Card className={`p-5 game-card ${statusClass}`} style={{ fontFamily: 'Georgia, serif' }}>
       <div className="flex items-start justify-between gap-4">
+        {/* Cover thumbnail with a retro border treatment */}
+        <CoverImage
+          platform={game.platform}
+          serial={game.serial}
+          alt={`${game.name} cover`}
+          className="w-12 h-16 rounded-sm flex-shrink-0"
+          style={{ border: '2px solid #c5a572' } as React.CSSProperties}
+        />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-2" style={{ borderBottom: '1px dashed #c5a572', paddingBottom: '8px' }}>
             <PlatformLogo platform={game.platform} size="sm" logoUrl={category?.logoUrl} />
@@ -220,6 +244,13 @@ function CompactCard({ game, onEdit, onDelete, platformName, category, statusCla
           className="flex-shrink-0 w-2 h-2 rounded-full"
           style={{ backgroundColor: dotColor }}
           title={game.acquired ? 'Owned' : game.priority ? 'Priority' : 'Wanted'}
+        />
+        {/* Cover thumbnail — kept small for the compact/dashboard layout */}
+        <CoverImage
+          platform={game.platform}
+          serial={game.serial}
+          alt={`${game.name} cover`}
+          className="w-8 h-10 rounded flex-shrink-0"
         />
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">

@@ -27,6 +27,7 @@ export function GameDialog({ open, onOpenChange, onSave, game, categories }: Gam
     game || {
       name: '',
       platform: defaultPlatform,
+      serial: '',
       acquired: false,
       priority: false
     }
@@ -49,6 +50,8 @@ export function GameDialog({ open, onOpenChange, onSave, game, categories }: Gam
       id: game?.id || crypto.randomUUID(),
       name: formData.name.trim(),
       platform: formData.platform as Platform,
+      // Store undefined (not empty string) so Azure Table entities stay clean.
+      serial: formData.serial?.trim() || undefined,
       acquired: formData.acquired || false,
       targetPrice: formData.targetPrice,
       priority: formData.priority,
@@ -65,6 +68,7 @@ export function GameDialog({ open, onOpenChange, onSave, game, categories }: Gam
       setFormData({
         name: '',
         platform: defaultPlatform,
+        serial: '',
         acquired: false,
         priority: false
       });
@@ -113,6 +117,16 @@ export function GameDialog({ open, onOpenChange, onSave, game, categories }: Gam
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="serial">Serial Number</Label>
+            <Input
+              id="serial"
+              value={formData.serial || ''}
+              onChange={(e) => setFormData(prev => ({ ...prev, serial: e.target.value }))}
+              placeholder="e.g. SCES-00001"
+            />
           </div>
 
           <div className="flex items-center gap-2">

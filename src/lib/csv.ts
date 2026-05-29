@@ -3,6 +3,7 @@ import { Game, Platform } from './types';
 const CSV_HEADERS = [
   'Name',
   'Platform',
+  'Serial',
   'Acquired',
   'Target Price',
   'Priority',
@@ -23,6 +24,7 @@ export function exportGamesToCSV(games: Game[]): string {
     const row = [
       escapeCSVField(game.name),
       game.platform,
+      escapeCSVField(game.serial || ''),
       game.acquired ? 'Yes' : 'No',
       game.targetPrice?.toString() || '',
       game.priority ? 'Yes' : 'No',
@@ -70,7 +72,7 @@ export function parseCSV(
       continue;
     }
     
-    const [name, platform, acquired, targetPrice, priority, purchasePrice, acquisitionDate, seller, notes] = values;
+    const [name, platform, serial, acquired, targetPrice, priority, purchasePrice, acquisitionDate, seller, notes] = values;
     
     if (!name || !name.trim()) {
       errors.push(`Line ${lineNum}: Game name is required`);
@@ -94,6 +96,7 @@ export function parseCSV(
       id: crypto.randomUUID(),
       name: name.trim(),
        platform: canonicalPlatform,
+      serial: serial?.trim() || undefined,
       acquired: isAcquired,
       targetPrice: targetPrice ? parseFloat(targetPrice) : undefined,
       priority: isPriority || undefined,
