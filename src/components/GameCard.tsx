@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Game } from '@/lib/types';
 import { PlatformLogo } from './PlatformLogo';
 import { CoverImage } from './CoverImage';
+import { GameDetailModal } from './GameDetailModal';
 import { PlatformCategory } from './CategoryDialog';
 import { Pencil, Trash, Star } from '@phosphor-icons/react';
 import { format } from 'date-fns';
@@ -20,6 +21,9 @@ interface GameCardProps {
 export function GameCard({ game, onEdit, onDelete, categories }: GameCardProps) {
   const { theme } = useTheme();
 
+  // Tracks which game (if any) has its detail modal open.
+  const [detailGame, setDetailGame] = useState<Game | null>(null);
+
   // Use loose equality (== null) so that both undefined and null — which can
   // appear when JSON from Azure storage round-trips optional fields — are
   // treated as "not set" without crashing .toFixed().
@@ -30,18 +34,27 @@ export function GameCard({ game, onEdit, onDelete, categories }: GameCardProps) 
   const platformName = category?.name ?? game.platform;
 
   const statusClass = game.acquired ? 'status-owned' : game.priority ? 'status-priority' : 'status-wanted';
+  const openDetail = () => setDetailGame(game);
+  const closeDetail = () => setDetailGame(null);
 
+  let card: React.ReactElement;
   if (theme === 'neon-arcade') {
-    return <NeonCard game={game} onEdit={onEdit} onDelete={onDelete} platformName={platformName} category={category} statusClass={statusClass} />;
+    card = <NeonCard game={game} onEdit={onEdit} onDelete={onDelete} platformName={platformName} category={category} statusClass={statusClass} onCoverClick={openDetail} />;
+  } else if (theme === 'dashboard-pro') {
+    card = <CompactCard game={game} onEdit={onEdit} onDelete={onDelete} platformName={platformName} category={category} statusClass={statusClass} formatPrice={formatPrice} onCoverClick={openDetail} />;
+  } else if (theme === 'retro-collector') {
+    card = <RetroCard game={game} onEdit={onEdit} onDelete={onDelete} platformName={platformName} category={category} statusClass={statusClass} formatPrice={formatPrice} onCoverClick={openDetail} />;
+  } else {
+    // clean-minimal default
+    card = <MinimalCard game={game} onEdit={onEdit} onDelete={onDelete} platformName={platformName} category={category} statusClass={statusClass} formatPrice={formatPrice} onCoverClick={openDetail} />;
   }
-  if (theme === 'dashboard-pro') {
-    return <CompactCard game={game} onEdit={onEdit} onDelete={onDelete} platformName={platformName} category={category} statusClass={statusClass} formatPrice={formatPrice} />;
-  }
-  if (theme === 'retro-collector') {
-    return <RetroCard game={game} onEdit={onEdit} onDelete={onDelete} platformName={platformName} category={category} statusClass={statusClass} formatPrice={formatPrice} />;
-  }
-  // clean-minimal default
-  return <MinimalCard game={game} onEdit={onEdit} onDelete={onDelete} platformName={platformName} category={category} statusClass={statusClass} formatPrice={formatPrice} />;
+
+  return (
+    <>
+      {card}
+      <GameDetailModal game={detailGame} onClose={closeDetail} categories={categories} />
+    </>
+  );
 }
 
 /* ─── Shared prop type ───────────────────────────────────────── */
@@ -54,19 +67,22 @@ interface CardProps {
   statusClass: string;
   // Accepts null as well as undefined to match the null-safe helper.
   formatPrice?: (p: number | undefined | null) => string;
+  /** Called when the user clicks the cover thumbnail. */
+  onCoverClick: () => void;
 }
 
 /* ─── 1. Clean Minimal ───────────────────────────────────────── */
-function MinimalCard({ game, onEdit, onDelete, platformName, category, statusClass, formatPrice }: CardProps) {
+function MinimalCard({ game, onEdit, onDelete, platformName, category, statusClass, formatPrice, onCoverClick }: CardProps) {
   return (
     <Card className={`p-6 game-card ${statusClass}`}>
       <div className="flex items-start justify-between gap-4">
-        {/* Cover thumbnail — falls back to placeholder when no serial is set */}
+        {/* Cover thumbnail — click to open the read-only detail modal */}
         <CoverImage
           platform={game.platform}
           serial={game.serial}
           alt={`${game.name} cover`}
-          className="w-12 h-16 rounded flex-shrink-0"
+          className="w-12 h-16 rounded flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+          onClick={onCoverClick}
         />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-3">
@@ -114,18 +130,19 @@ function MinimalCard({ game, onEdit, onDelete, platformName, category, statusCla
 }
 
 /* ─── 2. Neon Arcade ─────────────────────────────────────────── */
-function NeonCard({ game, onEdit, onDelete, platformName, statusClass }: CardProps) {
+function NeonCard({ game, onEdit, onDelete, platformName, statusClass, onCoverClick }: CardProps) {
   const statusColor = game.acquired ? '#4ade80' : game.priority ? '#fb923c' : '#a78bfa';
 
   return (
     <Card className={`p-5 game-card ${statusClass}`}>
       <div className="flex items-start justify-between gap-3">
-        {/* Cover thumbnail */}
+        {/* Cover thumbnail — click to open the read-only detail modal */}
         <CoverImage
           platform={game.platform}
           serial={game.serial}
           alt={`${game.name} cover`}
-          className="w-10 h-14 rounded flex-shrink-0 opacity-80"
+          className="w-10 h-14 rounded flex-shrink-0 opacity-80 cursor-pointer hover:opacity-60 transition-opacity"
+          onClick={onCoverClick}
         />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-3">
@@ -173,17 +190,18 @@ function NeonCard({ game, onEdit, onDelete, platformName, statusClass }: CardPro
 }
 
 /* ─── 3. Retro Collector ─────────────────────────────────────── */
-function RetroCard({ game, onEdit, onDelete, platformName, category, statusClass, formatPrice }: CardProps) {
+function RetroCard({ game, onEdit, onDelete, platformName, category, statusClass, formatPrice, onCoverClick }: CardProps) {
   return (
     <Card className={`p-5 game-card ${statusClass}`} style={{ fontFamily: 'Georgia, serif' }}>
       <div className="flex items-start justify-between gap-4">
-        {/* Cover thumbnail with a retro border treatment */}
+        {/* Cover thumbnail — retro border + click to open detail modal */}
         <CoverImage
           platform={game.platform}
           serial={game.serial}
           alt={`${game.name} cover`}
-          className="w-12 h-16 rounded-sm flex-shrink-0"
+          className="w-12 h-16 rounded-sm flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
           style={{ border: '2px solid #c5a572' } as React.CSSProperties}
+          onClick={onCoverClick}
         />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-2" style={{ borderBottom: '1px dashed #c5a572', paddingBottom: '8px' }}>
@@ -238,7 +256,7 @@ function RetroCard({ game, onEdit, onDelete, platformName, category, statusClass
 }
 
 /* ─── 4. Dashboard Pro ───────────────────────────────────────── */
-function CompactCard({ game, onEdit, onDelete, platformName, category, statusClass, formatPrice }: CardProps) {
+function CompactCard({ game, onEdit, onDelete, platformName, category, statusClass, formatPrice, onCoverClick }: CardProps) {
   // Re-use the same null-safe helper from the parent by accepting it as a prop.
   // If somehow it isn't passed, fall back to a simple inline guard.
   const dotColor = game.acquired ? '#10b981' : game.priority ? '#ef4444' : '#f59e0b';
@@ -251,12 +269,13 @@ function CompactCard({ game, onEdit, onDelete, platformName, category, statusCla
           style={{ backgroundColor: dotColor }}
           title={game.acquired ? 'Owned' : game.priority ? 'Priority' : 'Wanted'}
         />
-        {/* Cover thumbnail — kept small for the compact/dashboard layout */}
+        {/* Cover thumbnail — click to open the read-only detail modal */}
         <CoverImage
           platform={game.platform}
           serial={game.serial}
           alt={`${game.name} cover`}
-          className="w-8 h-10 rounded flex-shrink-0"
+          className="w-8 h-10 rounded flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+          onClick={onCoverClick}
         />
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">

@@ -11,6 +11,8 @@ interface CoverImageProps {
   className?: string;
   /** Additional inline styles merged with the base objectFit/display rules. */
   style?: CSSProperties;
+  /** Optional click handler — used to open the game detail modal. */
+  onClick?: () => void;
 }
 
 /**
@@ -24,7 +26,7 @@ interface CoverImageProps {
  * is required here.  The <img> element is used (not a <fetch> call) so that
  * requests to third-party image repos don't trigger CORS preflight issues.
  */
-export function CoverImage({ platform, serial, alt, className, style }: CoverImageProps) {
+export function CoverImage({ platform, serial, alt, className, style, onClick }: CoverImageProps) {
   // Start in the error state when no serial or no matching URL template exists.
   const candidateUrl = serial ? buildCoverUrl(platform, serial) : null;
   const [imgSrc, setImgSrc] = useState<string>(candidateUrl ?? placeholderSrc);
@@ -46,6 +48,7 @@ export function CoverImage({ platform, serial, alt, className, style }: CoverIma
       loading="lazy"
       onError={handleError}
       className={className}
+      onClick={onClick}
       // Show the serial as a tooltip so users can verify what was used.
       title={serial ? `Serial: ${serial}` : 'No serial — showing placeholder'}
       // Merge caller-provided styles with the base rules so e.g. RetroCard's
