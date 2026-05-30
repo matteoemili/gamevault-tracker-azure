@@ -1,9 +1,11 @@
 /**
  * Cover art resolution via serial number.
  *
- * Confirmed cover sources (community-maintained GitHub repos by xlenore):
- *   PS1 → https://github.com/xlenore/psx-covers  (covers/default/<SERIAL>.jpg)
- *   PS2 → https://github.com/xlenore/ps2-covers  (covers/default/<SERIAL>.jpg)
+ * Confirmed cover sources:
+ *   PS1 → https://github.com/xlenore/psx-covers      (covers/default/<SERIAL>.jpg, dashed)
+ *   PS2 → https://github.com/xlenore/ps2-covers      (covers/default/<SERIAL>.jpg, dashed)
+ *   PS3 → https://github.com/SvenGDK/PSMT-Covers     (PS3/<SERIALNODASH>.JPG, no dash, uppercase .JPG)
+ *   PSP → https://github.com/Andiweli/HexFlow-Covers  (Covers/PSP/<SERIALNODASH>.png, no dash, lowercase .png)
  *
  * Images are fetched directly by the browser — nothing is saved locally.
  * For any other platform, buildCoverUrl returns null and the <CoverImage>
@@ -34,15 +36,22 @@ function normaliseSerial(raw: string): string {
 
 /**
  * URL templates per confirmed platform.
- * Only repos verified to exist under the xlenore GitHub account are listed.
- * PS3 and PSP repos do not exist under this author — those platforms
- * will return null and the caller falls back to the placeholder.
+ * Each template receives the canonical dashed serial and is responsible for
+ * any platform-specific transformation (e.g. PS3 strips the dash).
  */
 const COVER_URL_TEMPLATES: Record<string, (serial: string) => string> = {
   PS1: (serial) =>
     `https://raw.githubusercontent.com/xlenore/psx-covers/main/covers/default/${serial}.jpg`,
   PS2: (serial) =>
     `https://raw.githubusercontent.com/xlenore/ps2-covers/main/covers/default/${serial}.jpg`,
+  // PS3 repo (SvenGDK/PSMT-Covers) uses no-dash filenames with an uppercase
+  // .JPG extension — e.g. canonical BCES-00569 → BCES00569.JPG
+  PS3: (serial) =>
+    `https://raw.githubusercontent.com/SvenGDK/PSMT-Covers/main/PS3/${serial.replace(/-/g, '')}.JPG`,
+  // PSP repo (Andiweli/HexFlow-Covers) also uses no-dash filenames, but with a
+  // lowercase .png extension — e.g. canonical NPJH-50647 → NPJH50647.png
+  PSP: (serial) =>
+    `https://raw.githubusercontent.com/Andiweli/HexFlow-Covers/main/Covers/PSP/${serial.replace(/-/g, '')}.png`,
 };
 
 /**
