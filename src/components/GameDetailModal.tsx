@@ -1,4 +1,5 @@
 import { format } from 'date-fns';
+import { formatDate } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
@@ -96,7 +97,7 @@ export function GameDetailModal({ game, onClose, categories }: GameDetailModalPr
 
               {game.acquisitionDate && (
                 <Row label="Acquired">
-                  {format(new Date(game.acquisitionDate), 'MMMM d, yyyy')}
+                  {formatDate(game.acquisitionDate, 'MMMM d, yyyy')}
                 </Row>
               )}
 

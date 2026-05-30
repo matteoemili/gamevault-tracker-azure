@@ -9,6 +9,7 @@ import { GameDetailModal } from './GameDetailModal';
 import { PlatformCategory } from './CategoryDialog';
 import { Pencil, Trash, Star } from '@phosphor-icons/react';
 import { format } from 'date-fns';
+import { formatDate } from '@/lib/utils';
 import { useTheme } from '@/contexts/theme-context';
 
 interface GameCardProps {
@@ -109,7 +110,7 @@ function MinimalCard({ game, onEdit, onDelete, platformName, category, statusCla
             {game.acquired && (
               <>
                 <p>Paid: <span className="text-foreground font-medium">{formatPrice!(game.purchasePrice)}</span></p>
-                {game.acquisitionDate && <p>Acquired {format(new Date(game.acquisitionDate), 'MMM d, yyyy')}</p>}
+                {game.acquisitionDate && <p>Acquired {formatDate(game.acquisitionDate, 'MMM d, yyyy')}</p>}
                 {game.seller && <p>from {game.seller}</p>}
               </>
             )}
@@ -166,7 +167,7 @@ function NeonCard({ game, onEdit, onDelete, platformName, statusClass, onCoverCl
               <div><span className="opacity-50">BUDGET:</span> <span className="text-primary">£{game.targetPrice.toFixed(2)}</span></div>
             )}
             {game.acquisitionDate && (
-              <div><span className="opacity-50">DATE:</span> {format(new Date(game.acquisitionDate), 'yyyy-MM-dd')}</div>
+              <div><span className="opacity-50">DATE:</span> {formatDate(game.acquisitionDate, 'yyyy-MM-dd')}</div>
             )}
             {game.seller && (
               <div><span className="opacity-50">SOURCE:</span> {game.seller}</div>
@@ -235,7 +236,7 @@ function RetroCard({ game, onEdit, onDelete, platformName, category, statusClass
             {game.acquired && (
               <>
                 <p>Purchase — <strong>{formatPrice!(game.purchasePrice)}</strong></p>
-                {game.acquisitionDate && <p>Acquired — {format(new Date(game.acquisitionDate), 'MMMM d, yyyy')}</p>}
+                {game.acquisitionDate && <p>Acquired — {formatDate(game.acquisitionDate, 'MMMM d, yyyy')}</p>}
                 {game.seller && <p>Seller — {game.seller}</p>}
               </>
             )}
@@ -292,7 +293,7 @@ function CompactCard({ game, onEdit, onDelete, platformName, category, statusCla
                   <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>· target £{game.targetPrice.toFixed(2)}</span>
                 )}
                 {game.acquisitionDate && (
-                  <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>· {format(new Date(game.acquisitionDate), 'dd/MM/yy')}</span>
+                  <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>· {formatDate(game.acquisitionDate, 'dd/MM/yy')}</span>
                 )}
               </div>
               {game.notes && <p className="text-xs mt-0.5 truncate italic" style={{ color: 'var(--muted-foreground)' }}>{game.notes}</p>}
