@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { isValid } from 'date-fns';
 import { useAzureTableList } from '@/hooks/use-azure-table';
 import { getAzureConfig } from '@/lib/azure-config';
 import { Button } from '@/components/ui/button';
@@ -31,8 +32,8 @@ function App() {
   const [editingGame, setEditingGame] = useState<Game | undefined>();
 
   // One-shot migration: a previous CSV import without the Serial column shifted
-  // the Acquired value ("Yes"/"No") into the serial field, leaving acquired=false.
-  // Detect that pattern on first load and auto-correct it in Azure.
+  // every column from position 2 onward by one, causing two distinct corruption
+  // patterns that are detected and repaired here on first load.
   const hasHealed = useRef(false);
   useEffect(() => {
     if (gamesLoading || hasHealed.current || !games?.length) return;
@@ -43,18 +44,56 @@ function App() {
     let needsFix = false;
 
     const healed = games.map(g => {
-      if (g.serial && boolLike.has(g.serial.trim().toLowerCase())) {
+      let record = { ...g };
+
+      // ── Pass 1 ───────────────────────────────────────────────────────────
+      // serial = "Yes"/"No" means the old Acquired column shifted into serial.
+      // Restore acquired from that value and clear the bogus serial.
+      if (record.serial && boolLike.has(record.serial.trim().toLowerCase())) {
         needsFix = true;
-        // The serial slot was actually the Acquired column — restore it.
-        const wasAcquired = ['yes', 'true', '1'].includes(g.serial.trim().toLowerCase());
-        return { ...g, acquired: wasAcquired, serial: undefined };
+        const wasAcquired = ['yes', 'true', '1'].includes(record.serial.trim().toLowerCase());
+        record = { ...record, acquired: wasAcquired, serial: undefined };
       }
-      return g;
+
+      // ── Pass 2 ───────────────────────────────────────────────────────────
+      // purchasePrice is a bare year integer (2000–2030) and acquisitionDate is
+      // not a valid ISO date string → the old Acquisition Date string ("2025-03-15")
+      // was parsed by parseFloat into the purchasePrice slot, and the Seller name
+      // slipped into acquisitionDate while Notes landed in seller.
+      //
+      // Recovery:
+      //   • real seller  = current acquisitionDate (the text that was there)
+      //   • real notes   = current seller
+      //   • purchasePrice and acquisitionDate are cleared (original values unrecoverable)
+      const yearLike =
+        record.purchasePrice != null &&
+        Number.isInteger(record.purchasePrice) &&
+        record.purchasePrice >= 2000 &&
+        record.purchasePrice <= 2030;
+
+      const dateFieldInvalid =
+        record.acquisitionDate != null &&
+        !isValid(new Date(record.acquisitionDate));
+
+      if (yearLike && dateFieldInvalid) {
+        needsFix = true;
+        record = {
+          ...record,
+          purchasePrice: undefined,
+          acquisitionDate: undefined,
+          // Slot that held the seller name (shifted from the original Seller column)
+          seller: record.acquisitionDate ?? undefined,
+          // Slot that held the notes text (shifted from the original Notes column)
+          notes: record.seller ?? record.notes ?? undefined,
+        };
+      }
+
+      return record;
     });
 
     if (needsFix) {
       setGames(healed);
-      toast.info('Data automatically corrected — Acquired status restored.');
+      toast.info('Stored data corrected — prices, dates and seller info restored.');
     }
   }, [gamesLoading, games]);
 
@@ -88,6 +127,28 @@ function App() {
   const handleDeleteGame = (id: string) => { setGames(c => (c || []).filter(g => g.id !== id)); toast.success('Game deleted'); };
   const handleAddNew = () => { setEditingGame(undefined); setDialogOpen(true); };
   const handleImport = (imported: Game[]) => setGames(c => [...(c || []), ...imported]);
+
+  // Upsert: replace any game that matches by name+platform, add the rest as new.
+  // This lets the user restore from an old CSV without creating duplicates.
+  const handleRefresh = (refreshed: Game[]) => {
+    setGames(current => {
+      const base = [...(current || [])];
+      refreshed.forEach(incoming => {
+        const idx = base.findIndex(
+          g =>
+            g.name.toLowerCase() === incoming.name.toLowerCase() &&
+            g.platform === incoming.platform
+        );
+        if (idx >= 0) {
+          // Preserve the existing id so Azure keeps the same row key.
+          base[idx] = { ...incoming, id: base[idx].id };
+        } else {
+          base.push(incoming);
+        }
+      });
+      return base;
+    });
+  };
   const handleCategoriesChange = (nc: PlatformCategory[]) => { setCategories(nc); toast.success('Categories updated'); };
   const handleDialogClose = (open: boolean) => { setDialogOpen(open); if (!open) setEditingGame(undefined); };
 
@@ -131,7 +192,7 @@ function App() {
               <div className="flex items-center gap-2">
                 <ThemeSelector />
                 <DarkModeToggle />
-                <ImportExportMenu games={games || []} onImport={handleImport} categories={catList} onCategoriesChange={handleCategoriesChange} />
+                <ImportExportMenu games={games || []} onImport={handleImport} onRefresh={handleRefresh} categories={catList} onCategoriesChange={handleCategoriesChange} />
                 <Button onClick={handleAddNew} size="sm" className="font-mono text-xs">
                   <Plus size={12} className="mr-1" /> INSERT
                 </Button>
@@ -184,7 +245,7 @@ function App() {
               <div className="flex items-center gap-2">
                 <ThemeSelector />
                 <DarkModeToggle />
-                <ImportExportMenu games={games || []} onImport={handleImport} categories={catList} onCategoriesChange={handleCategoriesChange} />
+                <ImportExportMenu games={games || []} onImport={handleImport} onRefresh={handleRefresh} categories={catList} onCategoriesChange={handleCategoriesChange} />
                 <Button onClick={handleAddNew}><Plus size={16} className="mr-1.5" /> Add Game</Button>
               </div>
             </div>
@@ -253,7 +314,7 @@ function App() {
               <div className="flex items-center gap-2">
                 <ThemeSelector />
                 <DarkModeToggle />
-                <ImportExportMenu games={games || []} onImport={handleImport} categories={catList} onCategoriesChange={handleCategoriesChange} />
+                <ImportExportMenu games={games || []} onImport={handleImport} onRefresh={handleRefresh} categories={catList} onCategoriesChange={handleCategoriesChange} />
                 <Button onClick={handleAddNew} size="sm">
                   <Plus size={14} className="mr-1" /> Add Entry
                 </Button>
@@ -312,7 +373,7 @@ function App() {
               <div className="flex items-center gap-1.5">
                 <ThemeSelector />
                 <DarkModeToggle />
-                <ImportExportMenu games={games || []} onImport={handleImport} categories={catList} onCategoriesChange={handleCategoriesChange} />
+                <ImportExportMenu games={games || []} onImport={handleImport} onRefresh={handleRefresh} categories={catList} onCategoriesChange={handleCategoriesChange} />
                 <Button onClick={handleAddNew} size="sm" className="h-7 text-xs px-3">
                   <Plus size={12} className="mr-1" /> New
                 </Button>
