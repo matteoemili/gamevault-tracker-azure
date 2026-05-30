@@ -27,6 +27,7 @@ export function GameDialog({ open, onOpenChange, onSave, game, categories }: Gam
     game || {
       name: '',
       platform: defaultPlatform,
+      serial: '',
       acquired: false,
       priority: false
     }
@@ -49,10 +50,16 @@ export function GameDialog({ open, onOpenChange, onSave, game, categories }: Gam
       id: game?.id || crypto.randomUUID(),
       name: formData.name.trim(),
       platform: formData.platform as Platform,
+      // Store undefined (not empty string) so Azure Table entities stay clean.
+      serial: formData.serial?.trim() || undefined,
       acquired: formData.acquired || false,
-      targetPrice: formData.targetPrice,
+      // Use ?? undefined to normalise any null that may have arrived from
+      // Azure Table Storage JSON round-trips (JSON preserves null; TypeScript
+      // optional fields expect undefined). This prevents null from being
+      // written back and avoids the .toFixed(null) crash in the cards.
+      targetPrice: formData.targetPrice ?? undefined,
       priority: formData.priority,
-      purchasePrice: formData.purchasePrice,
+      purchasePrice: formData.purchasePrice ?? undefined,
       acquisitionDate: formData.acquisitionDate,
       seller: formData.seller,
       notes: formData.notes
@@ -65,6 +72,7 @@ export function GameDialog({ open, onOpenChange, onSave, game, categories }: Gam
       setFormData({
         name: '',
         platform: defaultPlatform,
+        serial: '',
         acquired: false,
         priority: false
       });
@@ -113,6 +121,16 @@ export function GameDialog({ open, onOpenChange, onSave, game, categories }: Gam
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="serial">Serial Number</Label>
+            <Input
+              id="serial"
+              value={formData.serial || ''}
+              onChange={(e) => setFormData(prev => ({ ...prev, serial: e.target.value }))}
+              placeholder="e.g. SCES-00001"
+            />
           </div>
 
           <div className="flex items-center gap-2">

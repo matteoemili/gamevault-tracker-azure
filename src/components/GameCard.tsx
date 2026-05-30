@@ -1,11 +1,15 @@
+import React, { useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Game } from '@/lib/types';
 import { PlatformLogo } from './PlatformLogo';
+import { CoverImage } from './CoverImage';
+import { GameDetailModal } from './GameDetailModal';
 import { PlatformCategory } from './CategoryDialog';
 import { Pencil, Trash, Star } from '@phosphor-icons/react';
 import { format } from 'date-fns';
+import { formatDate } from '@/lib/utils';
 import { useTheme } from '@/contexts/theme-context';
 
 interface GameCardProps {
@@ -18,25 +22,40 @@ interface GameCardProps {
 export function GameCard({ game, onEdit, onDelete, categories }: GameCardProps) {
   const { theme } = useTheme();
 
-  const formatPrice = (price: number | undefined) =>
-    price === undefined || price === 0 ? 'Untracked' : `£${price.toFixed(2)}`;
+  // Tracks which game (if any) has its detail modal open.
+  const [detailGame, setDetailGame] = useState<Game | null>(null);
+
+  // Use loose equality (== null) so that both undefined and null — which can
+  // appear when JSON from Azure storage round-trips optional fields — are
+  // treated as "not set" without crashing .toFixed().
+  const formatPrice = (price: number | undefined | null) =>
+    price == null || price === 0 ? 'Untracked' : `£${price.toFixed(2)}`;
 
   const category = categories.find(c => c.id === game.platform);
   const platformName = category?.name ?? game.platform;
 
   const statusClass = game.acquired ? 'status-owned' : game.priority ? 'status-priority' : 'status-wanted';
+  const openDetail = () => setDetailGame(game);
+  const closeDetail = () => setDetailGame(null);
 
+  let card: React.ReactElement;
   if (theme === 'neon-arcade') {
-    return <NeonCard game={game} onEdit={onEdit} onDelete={onDelete} platformName={platformName} category={category} statusClass={statusClass} />;
+    card = <NeonCard game={game} onEdit={onEdit} onDelete={onDelete} platformName={platformName} category={category} statusClass={statusClass} onCoverClick={openDetail} />;
+  } else if (theme === 'dashboard-pro') {
+    card = <CompactCard game={game} onEdit={onEdit} onDelete={onDelete} platformName={platformName} category={category} statusClass={statusClass} formatPrice={formatPrice} onCoverClick={openDetail} />;
+  } else if (theme === 'retro-collector') {
+    card = <RetroCard game={game} onEdit={onEdit} onDelete={onDelete} platformName={platformName} category={category} statusClass={statusClass} formatPrice={formatPrice} onCoverClick={openDetail} />;
+  } else {
+    // clean-minimal default
+    card = <MinimalCard game={game} onEdit={onEdit} onDelete={onDelete} platformName={platformName} category={category} statusClass={statusClass} formatPrice={formatPrice} onCoverClick={openDetail} />;
   }
-  if (theme === 'dashboard-pro') {
-    return <CompactCard game={game} onEdit={onEdit} onDelete={onDelete} platformName={platformName} category={category} statusClass={statusClass} formatPrice={formatPrice} />;
-  }
-  if (theme === 'retro-collector') {
-    return <RetroCard game={game} onEdit={onEdit} onDelete={onDelete} platformName={platformName} category={category} statusClass={statusClass} formatPrice={formatPrice} />;
-  }
-  // clean-minimal default
-  return <MinimalCard game={game} onEdit={onEdit} onDelete={onDelete} platformName={platformName} category={category} statusClass={statusClass} formatPrice={formatPrice} />;
+
+  return (
+    <>
+      {card}
+      <GameDetailModal game={detailGame} onClose={closeDetail} categories={categories} />
+    </>
+  );
 }
 
 /* ─── Shared prop type ───────────────────────────────────────── */
@@ -47,14 +66,25 @@ interface CardProps {
   platformName: string;
   category: PlatformCategory | undefined;
   statusClass: string;
-  formatPrice?: (p: number | undefined) => string;
+  // Accepts null as well as undefined to match the null-safe helper.
+  formatPrice?: (p: number | undefined | null) => string;
+  /** Called when the user clicks the cover thumbnail. */
+  onCoverClick: () => void;
 }
 
 /* ─── 1. Clean Minimal ───────────────────────────────────────── */
-function MinimalCard({ game, onEdit, onDelete, platformName, category, statusClass, formatPrice }: CardProps) {
+function MinimalCard({ game, onEdit, onDelete, platformName, category, statusClass, formatPrice, onCoverClick }: CardProps) {
   return (
     <Card className={`p-6 game-card ${statusClass}`}>
       <div className="flex items-start justify-between gap-4">
+        {/* Cover thumbnail — click to open the read-only detail modal */}
+        <CoverImage
+          platform={game.platform}
+          serial={game.serial}
+          alt={`${game.name} cover`}
+          className="w-12 h-16 rounded flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+          onClick={onCoverClick}
+        />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-3">
             <PlatformLogo platform={game.platform} size="sm" logoUrl={category?.logoUrl} />
@@ -74,13 +104,13 @@ function MinimalCard({ game, onEdit, onDelete, platformName, category, statusCla
             )}
           </div>
           <div className="text-sm text-muted-foreground space-y-0.5">
-            {!game.acquired && game.targetPrice !== undefined && (
+            {!game.acquired && game.targetPrice != null && (
               <p>Target: <span className="text-foreground font-medium">£{game.targetPrice.toFixed(2)}</span></p>
             )}
             {game.acquired && (
               <>
                 <p>Paid: <span className="text-foreground font-medium">{formatPrice!(game.purchasePrice)}</span></p>
-                {game.acquisitionDate && <p>Acquired {format(new Date(game.acquisitionDate), 'MMM d, yyyy')}</p>}
+                {game.acquisitionDate && <p>Acquired {formatDate(game.acquisitionDate, 'MMM d, yyyy')}</p>}
                 {game.seller && <p>from {game.seller}</p>}
               </>
             )}
@@ -101,12 +131,20 @@ function MinimalCard({ game, onEdit, onDelete, platformName, category, statusCla
 }
 
 /* ─── 2. Neon Arcade ─────────────────────────────────────────── */
-function NeonCard({ game, onEdit, onDelete, platformName, statusClass }: CardProps) {
+function NeonCard({ game, onEdit, onDelete, platformName, statusClass, onCoverClick }: CardProps) {
   const statusColor = game.acquired ? '#4ade80' : game.priority ? '#fb923c' : '#a78bfa';
 
   return (
     <Card className={`p-5 game-card ${statusClass}`}>
       <div className="flex items-start justify-between gap-3">
+        {/* Cover thumbnail — click to open the read-only detail modal */}
+        <CoverImage
+          platform={game.platform}
+          serial={game.serial}
+          alt={`${game.name} cover`}
+          className="w-10 h-14 rounded flex-shrink-0 opacity-80 cursor-pointer hover:opacity-60 transition-opacity"
+          onClick={onCoverClick}
+        />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-3">
             <span className="text-primary font-mono text-xs opacity-50">[{platformName.toUpperCase().replace(/\s/g, '_')}]</span>
@@ -122,14 +160,14 @@ function NeonCard({ game, onEdit, onDelete, platformName, statusClass }: CardPro
                 {game.acquired ? '✓ ACQUIRED' : game.priority ? '⚡ PRIORITY' : '◈ HUNTING'}
               </span>
             </div>
-            {game.acquired && game.purchasePrice !== undefined && (
+            {game.acquired && game.purchasePrice != null && (
               <div><span className="opacity-50">COST:</span> <span className="text-primary">£{game.purchasePrice.toFixed(2)}</span></div>
             )}
-            {!game.acquired && game.targetPrice !== undefined && (
+            {!game.acquired && game.targetPrice != null && (
               <div><span className="opacity-50">BUDGET:</span> <span className="text-primary">£{game.targetPrice.toFixed(2)}</span></div>
             )}
             {game.acquisitionDate && (
-              <div><span className="opacity-50">DATE:</span> {format(new Date(game.acquisitionDate), 'yyyy-MM-dd')}</div>
+              <div><span className="opacity-50">DATE:</span> {formatDate(game.acquisitionDate, 'yyyy-MM-dd')}</div>
             )}
             {game.seller && (
               <div><span className="opacity-50">SOURCE:</span> {game.seller}</div>
@@ -153,10 +191,19 @@ function NeonCard({ game, onEdit, onDelete, platformName, statusClass }: CardPro
 }
 
 /* ─── 3. Retro Collector ─────────────────────────────────────── */
-function RetroCard({ game, onEdit, onDelete, platformName, category, statusClass, formatPrice }: CardProps) {
+function RetroCard({ game, onEdit, onDelete, platformName, category, statusClass, formatPrice, onCoverClick }: CardProps) {
   return (
     <Card className={`p-5 game-card ${statusClass}`} style={{ fontFamily: 'Georgia, serif' }}>
       <div className="flex items-start justify-between gap-4">
+        {/* Cover thumbnail — retro border + click to open detail modal */}
+        <CoverImage
+          platform={game.platform}
+          serial={game.serial}
+          alt={`${game.name} cover`}
+          className="w-12 h-16 rounded-sm flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+          style={{ border: '2px solid #c5a572' } as React.CSSProperties}
+          onClick={onCoverClick}
+        />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-2" style={{ borderBottom: '1px dashed #c5a572', paddingBottom: '8px' }}>
             <PlatformLogo platform={game.platform} size="sm" logoUrl={category?.logoUrl} />
@@ -183,13 +230,13 @@ function RetroCard({ game, onEdit, onDelete, platformName, category, statusClass
             )}
           </div>
           <div className="text-sm space-y-0.5" style={{ color: 'var(--muted-foreground)' }}>
-            {!game.acquired && game.targetPrice !== undefined && (
+            {!game.acquired && game.targetPrice != null && (
               <p>Target Price — <strong>£{game.targetPrice.toFixed(2)}</strong></p>
             )}
             {game.acquired && (
               <>
                 <p>Purchase — <strong>{formatPrice!(game.purchasePrice)}</strong></p>
-                {game.acquisitionDate && <p>Acquired — {format(new Date(game.acquisitionDate), 'MMMM d, yyyy')}</p>}
+                {game.acquisitionDate && <p>Acquired — {formatDate(game.acquisitionDate, 'MMMM d, yyyy')}</p>}
                 {game.seller && <p>Seller — {game.seller}</p>}
               </>
             )}
@@ -210,7 +257,9 @@ function RetroCard({ game, onEdit, onDelete, platformName, category, statusClass
 }
 
 /* ─── 4. Dashboard Pro ───────────────────────────────────────── */
-function CompactCard({ game, onEdit, onDelete, platformName, category, statusClass, formatPrice }: CardProps) {
+function CompactCard({ game, onEdit, onDelete, platformName, category, statusClass, formatPrice, onCoverClick }: CardProps) {
+  // Re-use the same null-safe helper from the parent by accepting it as a prop.
+  // If somehow it isn't passed, fall back to a simple inline guard.
   const dotColor = game.acquired ? '#10b981' : game.priority ? '#ef4444' : '#f59e0b';
 
   return (
@@ -221,6 +270,14 @@ function CompactCard({ game, onEdit, onDelete, platformName, category, statusCla
           style={{ backgroundColor: dotColor }}
           title={game.acquired ? 'Owned' : game.priority ? 'Priority' : 'Wanted'}
         />
+        {/* Cover thumbnail — click to open the read-only detail modal */}
+        <CoverImage
+          platform={game.platform}
+          serial={game.serial}
+          alt={`${game.name} cover`}
+          className="w-8 h-10 rounded flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+          onClick={onCoverClick}
+        />
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
@@ -229,14 +286,14 @@ function CompactCard({ game, onEdit, onDelete, platformName, category, statusCla
               </div>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-xs font-mono" style={{ color: 'var(--muted-foreground)' }}>{platformName}</span>
-                {game.acquired && game.purchasePrice !== undefined && (
+                {game.acquired && game.purchasePrice != null && (
                   <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>· £{game.purchasePrice.toFixed(2)}</span>
                 )}
-                {!game.acquired && game.targetPrice !== undefined && (
+                {!game.acquired && game.targetPrice != null && (
                   <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>· target £{game.targetPrice.toFixed(2)}</span>
                 )}
                 {game.acquisitionDate && (
-                  <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>· {format(new Date(game.acquisitionDate), 'dd/MM/yy')}</span>
+                  <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>· {formatDate(game.acquisitionDate, 'dd/MM/yy')}</span>
                 )}
               </div>
               {game.notes && <p className="text-xs mt-0.5 truncate italic" style={{ color: 'var(--muted-foreground)' }}>{game.notes}</p>}

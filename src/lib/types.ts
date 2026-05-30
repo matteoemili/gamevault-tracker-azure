@@ -4,6 +4,9 @@ export interface Game {
   id: string;
   name: string;
   platform: Platform;
+  /** Optional platform-specific product serial (e.g. SCES-00001 for PS1).
+   *  Used to resolve box-art from PSXDataCenter-style cover repositories. */
+  serial?: string;
   acquired: boolean;
   targetPrice?: number;
   priority?: boolean;

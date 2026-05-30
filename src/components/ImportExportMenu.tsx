@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { DotsThree, DownloadSimple, UploadSimple, Tag, MagnifyingGlass, Star, Warning } from '@phosphor-icons/react';
+import { DotsThree, DownloadSimple, UploadSimple, Tag, MagnifyingGlass, Star, Warning, ArrowsClockwise } from '@phosphor-icons/react';
 import { generateBlankCSV, exportGamesToCSV, parseCSV, downloadCSV } from '@/lib/csv';
 import { Game } from '@/lib/types';
 import { DEFAULT_CATEGORIES } from '@/lib/categories';
@@ -31,11 +31,14 @@ import { PlatformLogo } from './PlatformLogo';
 interface ImportExportMenuProps {
   games: Game[];
   onImport: (games: Game[]) => void;
+  /** Called with the parsed CSV rows when the user triggers Refresh from CSV.
+   *  The caller is responsible for the upsert: replace matching rows and add new ones. */
+  onRefresh: (games: Game[]) => void;
   categories: PlatformCategory[];
   onCategoriesChange: (categories: PlatformCategory[]) => void;
 }
 
-export function ImportExportMenu({ games, onImport, categories, onCategoriesChange }: ImportExportMenuProps) {
+export function ImportExportMenu({ games, onImport, onRefresh, categories, onCategoriesChange }: ImportExportMenuProps) {
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showCategoryDialog, setShowCategoryDialog] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
@@ -47,6 +50,7 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
   const [importStatusFilter, setImportStatusFilter] = useState<'all' | 'owned' | 'wanted'>('all');
   const [importDuplicateFilter, setImportDuplicateFilter] = useState<'all' | 'duplicates' | 'new'>('all');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const refreshFileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDownloadTemplate = () => {
     const csv = generateBlankCSV();
@@ -101,6 +105,40 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
 
   const handleImportClick = () => {
     fileInputRef.current?.click();
+  };
+
+  const handleRefreshClick = () => {
+    refreshFileInputRef.current?.click();
+  };
+
+  // Parse the CSV and immediately upsert into the store without showing the
+  // selection dialog — this is intended as a quick restore/refresh path.
+  const handleRefreshFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      const platformIds = (categories.length ? categories : DEFAULT_CATEGORIES).map(c => c.id);
+      const { games: parsed, errors } = parseCSV(content, platformIds);
+
+      if (errors.length > 0) {
+        toast.error(`CSV errors: ${errors.length}`, {
+          description: errors.slice(0, 3).join('\n') + (errors.length > 3 ? '\n...' : '')
+        });
+      }
+
+      if (parsed.length > 0) {
+        onRefresh(parsed);
+        toast.success(`Refreshed ${parsed.length} ${parsed.length === 1 ? 'game' : 'games'} from CSV`);
+      } else {
+        toast.error('No valid games found in CSV');
+      }
+    };
+
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -261,6 +299,10 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
             <UploadSimple className="mr-2" />
             Import CSV
           </DropdownMenuItem>
+          <DropdownMenuItem onClick={handleRefreshClick}>
+            <ArrowsClockwise className="mr-2" />
+            Refresh from CSV
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={handleExportClick} disabled={games.length === 0}>
             <DownloadSimple className="mr-2" />
             Export Games
@@ -278,6 +320,14 @@ export function ImportExportMenu({ games, onImport, categories, onCategoriesChan
         type="file"
         accept=".csv"
         onChange={handleFileChange}
+        className="hidden"
+      />
+      {/* Separate hidden input for the refresh flow so the two can't interfere */}
+      <input
+        ref={refreshFileInputRef}
+        type="file"
+        accept=".csv"
+        onChange={handleRefreshFileChange}
         className="hidden"
       />
 
