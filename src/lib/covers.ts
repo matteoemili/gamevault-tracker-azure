@@ -5,6 +5,7 @@
  *   PS1 → https://github.com/xlenore/psx-covers      (covers/default/<SERIAL>.jpg, dashed)
  *   PS2 → https://github.com/xlenore/ps2-covers      (covers/default/<SERIAL>.jpg, dashed)
  *   PS3 → https://github.com/SvenGDK/PSMT-Covers     (PS3/<SERIALNODASH>.JPG, no dash, uppercase .JPG)
+ *   PSP → https://github.com/Andiweli/HexFlow-Covers  (Covers/PSP/<SERIALNODASH>.png, no dash, lowercase .png)
  *
  * Images are fetched directly by the browser — nothing is saved locally.
  * For any other platform, buildCoverUrl returns null and the <CoverImage>
@@ -47,6 +48,10 @@ const COVER_URL_TEMPLATES: Record<string, (serial: string) => string> = {
   // .JPG extension — e.g. canonical BCES-00569 → BCES00569.JPG
   PS3: (serial) =>
     `https://raw.githubusercontent.com/SvenGDK/PSMT-Covers/main/PS3/${serial.replace(/-/g, '')}.JPG`,
+  // PSP repo (Andiweli/HexFlow-Covers) also uses no-dash filenames, but with a
+  // lowercase .png extension — e.g. canonical NPJH-50647 → NPJH50647.png
+  PSP: (serial) =>
+    `https://raw.githubusercontent.com/Andiweli/HexFlow-Covers/main/Covers/PSP/${serial.replace(/-/g, '')}.png`,
 };
 
 /**
