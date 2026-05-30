@@ -59,20 +59,40 @@ export function parseCSV(
     return { games, errors };
   }
   
-  const headers = parseCSVLine(lines[0]);
-  
+  const headerRow = parseCSVLine(lines[0]);
+
+  // Build a case-insensitive map of column name → index.
+  // This makes the parser resilient to column additions/reordering: old CSVs
+  // without the Serial column will simply return '' for that field, and new
+  // CSVs with Serial are read correctly by name rather than position.
+  const colIdx = new Map<string, number>();
+  headerRow.forEach((h, i) => colIdx.set(h.trim().toLowerCase(), i));
+
+  // Read a named column value from a parsed row, defaulting to '' when absent.
+  const col = (values: string[], colName: string): string => {
+    const idx = colIdx.get(colName.toLowerCase());
+    return idx !== undefined ? (values[idx] ?? '') : '';
+  };
+
   for (let i = 1; i < lines.length; i++) {
     const lineNum = i + 1;
     const values = parseCSVLine(lines[i]);
-    
+
     if (values.length === 0) continue;
-    
-    if (values.length !== headers.length) {
-      errors.push(`Line ${lineNum}: Expected ${headers.length} columns, got ${values.length}`);
-      continue;
-    }
-    
-    const [name, platform, serial, acquired, targetPrice, priority, purchasePrice, acquisitionDate, seller, notes] = values;
+
+    // No strict column-count gate: header-based lookup handles extra or missing
+    // columns gracefully. Name and Platform are validated explicitly below.
+
+    const name         = col(values, 'name');
+    const platform     = col(values, 'platform');
+    const serial       = col(values, 'serial');
+    const acquired     = col(values, 'acquired');
+    const targetPrice  = col(values, 'target price');
+    const priority     = col(values, 'priority');
+    const purchasePrice = col(values, 'purchase price');
+    const acquisitionDate = col(values, 'acquisition date');
+    const seller       = col(values, 'seller');
+    const notes        = col(values, 'notes');
     
     if (!name || !name.trim()) {
       errors.push(`Line ${lineNum}: Game name is required`);

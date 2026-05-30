@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useAzureTableList } from '@/hooks/use-azure-table';
 import { getAzureConfig } from '@/lib/azure-config';
 import { Button } from '@/components/ui/button';
@@ -29,6 +29,34 @@ function App() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingGame, setEditingGame] = useState<Game | undefined>();
+
+  // One-shot migration: a previous CSV import without the Serial column shifted
+  // the Acquired value ("Yes"/"No") into the serial field, leaving acquired=false.
+  // Detect that pattern on first load and auto-correct it in Azure.
+  const hasHealed = useRef(false);
+  useEffect(() => {
+    if (gamesLoading || hasHealed.current || !games?.length) return;
+    hasHealed.current = true;
+
+    // Values that are valid CSV booleans but never valid serial numbers.
+    const boolLike = new Set(['yes', 'no', 'true', 'false', '1', '0']);
+    let needsFix = false;
+
+    const healed = games.map(g => {
+      if (g.serial && boolLike.has(g.serial.trim().toLowerCase())) {
+        needsFix = true;
+        // The serial slot was actually the Acquired column — restore it.
+        const wasAcquired = ['yes', 'true', '1'].includes(g.serial.trim().toLowerCase());
+        return { ...g, acquired: wasAcquired, serial: undefined };
+      }
+      return g;
+    });
+
+    if (needsFix) {
+      setGames(healed);
+      toast.info('Data automatically corrected — Acquired status restored.');
+    }
+  }, [gamesLoading, games]);
 
   const filteredGames = useMemo(() => {
     if (!games) return [];
