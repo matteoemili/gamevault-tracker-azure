@@ -278,7 +278,11 @@ configure_storage_cors() {
     fi
 
     local WEB_APP_URL="https://$SWA_HOSTNAME"
-    log_info "Applying CORS for: $WEB_APP_URL"
+    local CANONICAL_WEB_APP_URL="$WEB_APP_URL"
+    if [[ "$SWA_HOSTNAME" =~ ^([^.]+)\.[^.]+\.([0-9]+\.azurestaticapps\.net)$ ]]; then
+        CANONICAL_WEB_APP_URL="https://${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+    fi
+    log_info "Applying CORS for: $WEB_APP_URL and $CANONICAL_WEB_APP_URL"
 
     az storage cors clear \
         --account-name "$STORAGE_ACCOUNT" \
@@ -288,7 +292,7 @@ configure_storage_cors() {
         --account-name "$STORAGE_ACCOUNT" \
         --services t \
         --methods GET POST PUT DELETE OPTIONS PATCH MERGE HEAD \
-        --origins "$WEB_APP_URL" "http://localhost:5173" "http://localhost:5000" "http://localhost:3000" "http://127.0.0.1:5173" \
+        --origins "$WEB_APP_URL" "$CANONICAL_WEB_APP_URL" "http://localhost:5173" "http://localhost:5000" "http://localhost:3000" "http://127.0.0.1:5173" \
         --allowed-headers "*" \
         --exposed-headers "*" \
         --max-age 3600 >/dev/null

@@ -154,10 +154,15 @@ jobs:
         run: |
           STORAGE_ACCOUNT="${{ steps.deploy.outputs.storageAccountName }}"
           WEB_APP_URL="${{ steps.deploy.outputs.staticWebAppUrl }}"
+          WEB_APP_HOST="${WEB_APP_URL#https://}"
+          CANONICAL_WEB_APP_URL="$WEB_APP_URL"
+          if [[ "$WEB_APP_HOST" =~ ^([^.]+)\.[^.]+\.([0-9]+\.azurestaticapps\.net)$ ]]; then
+            CANONICAL_WEB_APP_URL="https://${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+          fi
           
           echo "🌐 Configuring CORS for Table Service..."
           echo "Storage Account: $STORAGE_ACCOUNT"
-          echo "Allowed Origin: $WEB_APP_URL"
+          echo "Allowed Origins: $WEB_APP_URL, $CANONICAL_WEB_APP_URL"
           
           az storage cors clear \
             --account-name "$STORAGE_ACCOUNT" \
@@ -167,7 +172,7 @@ jobs:
             --account-name "$STORAGE_ACCOUNT" \
             --services t \
             --methods GET POST PUT DELETE OPTIONS PATCH MERGE HEAD \
-            --origins "$WEB_APP_URL" "http://localhost:5173" "http://localhost:5000" "http://localhost:3000" "http://127.0.0.1:5173" \
+            --origins "$WEB_APP_URL" "$CANONICAL_WEB_APP_URL" "http://localhost:5173" "http://localhost:5000" "http://localhost:3000" "http://127.0.0.1:5173" \
             --allowed-headers "*" \
             --exposed-headers "*" \
             --max-age 3600

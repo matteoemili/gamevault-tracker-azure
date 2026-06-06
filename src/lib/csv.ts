@@ -81,6 +81,7 @@ export function parseCSV(
     const values = parseCSVLine(lines[i]);
 
     if (values.length === 0) continue;
+    if (values.every(value => !value.trim())) continue;
 
     // No strict column-count gate: header-based lookup handles extra or missing
     // columns gracefully. Name and Platform are validated explicitly below.
