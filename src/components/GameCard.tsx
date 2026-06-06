@@ -72,6 +72,10 @@ interface CardProps {
   onCoverClick: () => void;
 }
 
+function formatRating(rating: number): string {
+  return `${'★'.repeat(rating)}${'☆'.repeat(5 - rating)} (${rating}/5)`;
+}
+
 /* ─── 1. Clean Minimal ───────────────────────────────────────── */
 function MinimalCard({ game, onEdit, onDelete, platformName, category, statusClass, formatPrice, onCoverClick }: CardProps) {
   return (
@@ -115,6 +119,7 @@ function MinimalCard({ game, onEdit, onDelete, platformName, category, statusCla
               </>
             )}
             {game.notes && <p className="mt-2 text-xs italic line-clamp-2">{game.notes}</p>}
+            {game.rating != null && <p>Rating: <span className="text-foreground font-medium">{formatRating(game.rating)}</span></p>}
           </div>
         </div>
         <div className="flex gap-1.5 flex-shrink-0">
@@ -174,6 +179,9 @@ function NeonCard({ game, onEdit, onDelete, platformName, statusClass, onCoverCl
             )}
             {game.notes && (
               <div className="mt-2 opacity-70 italic truncate" title={game.notes}>// {game.notes}</div>
+            )}
+            {game.rating != null && (
+              <div><span className="opacity-50">RATING:</span> <span className="text-primary">{formatRating(game.rating)}</span></div>
             )}
           </div>
         </div>
@@ -241,6 +249,7 @@ function RetroCard({ game, onEdit, onDelete, platformName, category, statusClass
               </>
             )}
             {game.notes && <p className="mt-2 text-xs italic">"{game.notes}"</p>}
+            {game.rating != null && <p>Rating — <strong>{formatRating(game.rating)}</strong></p>}
           </div>
         </div>
         <div className="flex flex-col gap-1 flex-shrink-0">
@@ -297,6 +306,11 @@ function CompactCard({ game, onEdit, onDelete, platformName, category, statusCla
                 )}
               </div>
               {game.notes && <p className="text-xs mt-0.5 truncate italic" style={{ color: 'var(--muted-foreground)' }}>{game.notes}</p>}
+              {game.rating != null && (
+                <p className="text-xs mt-0.5" style={{ color: 'var(--muted-foreground)' }}>
+                  rating {formatRating(game.rating)}
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-1 flex-shrink-0">
               <Button size="icon" variant="ghost" onClick={() => onEdit(game)} className="h-6 w-6">
@@ -312,4 +326,3 @@ function CompactCard({ game, onEdit, onDelete, platformName, category, statusCla
     </Card>
   );
 }
-

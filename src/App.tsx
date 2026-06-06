@@ -19,6 +19,7 @@ import { DarkModeToggle } from '@/components/DarkModeToggle';
 import { useTheme } from '@/contexts/theme-context';
 
 type StatusFilter = 'all' | 'owned' | 'wanted' | 'priority';
+type RatingFilter = 'all' | 'unrated' | '1' | '2' | '3' | '4' | '5';
 
 function App() {
   const azureConfig = getAzureConfig();
@@ -28,6 +29,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [platformFilter, setPlatformFilter] = useState<Platform | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [ratingFilter, setRatingFilter] = useState<RatingFilter>('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingGame, setEditingGame] = useState<Game | undefined>();
 
@@ -104,13 +106,16 @@ function App() {
         const matchesSearch = game.name.toLowerCase().includes(searchQuery.toLowerCase());
         const matchesPlatform = platformFilter === 'all' || game.platform === platformFilter;
         let matchesStatus = true;
+        let matchesRating = true;
         if (statusFilter === 'owned') matchesStatus = game.acquired;
         else if (statusFilter === 'wanted') matchesStatus = !game.acquired;
         else if (statusFilter === 'priority') matchesStatus = !game.acquired && game.priority === true;
-        return matchesSearch && matchesPlatform && matchesStatus;
+        if (ratingFilter === 'unrated') matchesRating = game.rating == null;
+        else if (ratingFilter !== 'all') matchesRating = game.rating === Number(ratingFilter);
+        return matchesSearch && matchesPlatform && matchesStatus && matchesRating;
       })
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-  }, [games, searchQuery, platformFilter, statusFilter]);
+  }, [games, searchQuery, platformFilter, statusFilter, ratingFilter]);
 
   const handleSaveGame = (game: Game) => {
     setGames(current => {
@@ -220,6 +225,18 @@ function App() {
                   <SelectItem value="priority">PRIORITY</SelectItem>
                 </SelectContent>
               </Select>
+              <Select value={ratingFilter} onValueChange={v => setRatingFilter(v as RatingFilter)}>
+                <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="Rating" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All ratings</SelectItem>
+                  <SelectItem value="unrated">Unrated</SelectItem>
+                  <SelectItem value="1">1★</SelectItem>
+                  <SelectItem value="2">2★</SelectItem>
+                  <SelectItem value="3">3★</SelectItem>
+                  <SelectItem value="4">4★</SelectItem>
+                  <SelectItem value="5">5★</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex flex-wrap gap-1.5 mt-3">
               {[{ id: 'all', name: 'ALL' }, ...catList.map(c => ({ id: c.id, name: c.name.toUpperCase() }))].map(p => (
@@ -269,6 +286,18 @@ function App() {
                   <SelectItem value="owned">Owned</SelectItem>
                   <SelectItem value="wanted">Wishlist</SelectItem>
                   <SelectItem value="priority">Priority</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={ratingFilter} onValueChange={v => setRatingFilter(v as RatingFilter)}>
+                <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="Rating" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All ratings</SelectItem>
+                  <SelectItem value="unrated">Unrated</SelectItem>
+                  <SelectItem value="1">1★</SelectItem>
+                  <SelectItem value="2">2★</SelectItem>
+                  <SelectItem value="3">3★</SelectItem>
+                  <SelectItem value="4">4★</SelectItem>
+                  <SelectItem value="5">5★</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -334,6 +363,18 @@ function App() {
                   <SelectItem value="priority">Priority</SelectItem>
                 </SelectContent>
               </Select>
+              <Select value={ratingFilter} onValueChange={v => setRatingFilter(v as RatingFilter)}>
+                <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="Rating" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All ratings</SelectItem>
+                  <SelectItem value="unrated">Unrated</SelectItem>
+                  <SelectItem value="1">1★</SelectItem>
+                  <SelectItem value="2">2★</SelectItem>
+                  <SelectItem value="3">3★</SelectItem>
+                  <SelectItem value="4">4★</SelectItem>
+                  <SelectItem value="5">5★</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex flex-wrap gap-2 mt-3">
               <Button variant={platformFilter === 'all' ? 'default' : 'outline'} onClick={() => setPlatformFilter('all')} size="sm">
@@ -396,6 +437,18 @@ function App() {
                     <SelectItem value="priority">Priority</SelectItem>
                   </SelectContent>
                 </Select>
+                <Select value={ratingFilter} onValueChange={v => setRatingFilter(v as RatingFilter)}>
+                  <SelectTrigger className="w-full sm:w-36 h-7 text-xs"><SelectValue placeholder="Rating" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All ratings</SelectItem>
+                    <SelectItem value="unrated">Unrated</SelectItem>
+                    <SelectItem value="1">1★</SelectItem>
+                    <SelectItem value="2">2★</SelectItem>
+                    <SelectItem value="3">3★</SelectItem>
+                    <SelectItem value="4">4★</SelectItem>
+                    <SelectItem value="5">5★</SelectItem>
+                  </SelectContent>
+                </Select>
                 <Select value={platformFilter} onValueChange={v => setPlatformFilter(v as Platform | 'all')}>
                   <SelectTrigger className="w-full sm:w-36 h-7 text-xs"><SelectValue placeholder="Platform" /></SelectTrigger>
                   <SelectContent>
@@ -435,7 +488,7 @@ function App() {
                 <div className="text-5xl mb-4">🔍</div>
                 <h2 className="text-xl font-semibold mb-2">No matches found</h2>
                 <p className="text-muted-foreground mb-6 text-sm">Try adjusting your filters or search query.</p>
-                <Button variant="outline" onClick={() => { setSearchQuery(''); setPlatformFilter('all'); setStatusFilter('all'); }}>
+                <Button variant="outline" onClick={() => { setSearchQuery(''); setPlatformFilter('all'); setStatusFilter('all'); setRatingFilter('all'); }}>
                   Clear Filters
                 </Button>
               </div>
