@@ -248,6 +248,58 @@ generate_sas_token() {
     fi
 }
 
+configure_storage_cors() {
+    log_info "Configuring Storage Table Service CORS..."
+
+    local DEPLOYMENT_NAME
+    DEPLOYMENT_NAME=$(az deployment group list --resource-group "$RESOURCE_GROUP" --query '[0].name' -o tsv 2>/dev/null)
+    if [[ -z "$DEPLOYMENT_NAME" ]]; then
+        log_warning "Could not determine latest deployment name; skipping CORS setup"
+        return
+    fi
+
+    local STORAGE_ACCOUNT
+    STORAGE_ACCOUNT=$(az deployment group show \
+        --resource-group "$RESOURCE_GROUP" \
+        --name "$DEPLOYMENT_NAME" \
+        --query 'properties.outputs.storageAccountName.value' \
+        -o tsv 2>/dev/null)
+
+    local SWA_HOSTNAME
+    SWA_HOSTNAME=$(az deployment group show \
+        --resource-group "$RESOURCE_GROUP" \
+        --name "$DEPLOYMENT_NAME" \
+        --query 'properties.outputs.staticWebAppDefaultHostname.value' \
+        -o tsv 2>/dev/null)
+
+    if [[ -z "$STORAGE_ACCOUNT" || -z "$SWA_HOSTNAME" ]]; then
+        log_warning "Missing storage account or Static Web App hostname output; skipping CORS setup"
+        return
+    fi
+
+    local WEB_APP_URL="https://$SWA_HOSTNAME"
+    local CANONICAL_WEB_APP_URL="$WEB_APP_URL"
+    if [[ "$SWA_HOSTNAME" =~ ^([^.]+)\.[^.]+\.([0-9]+\.azurestaticapps\.net)$ ]]; then
+        CANONICAL_WEB_APP_URL="https://${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+    fi
+    log_info "Applying CORS for: $WEB_APP_URL and $CANONICAL_WEB_APP_URL"
+
+    az storage cors clear \
+        --account-name "$STORAGE_ACCOUNT" \
+        --services t >/dev/null
+
+    az storage cors add \
+        --account-name "$STORAGE_ACCOUNT" \
+        --services t \
+        --methods GET POST PUT DELETE OPTIONS PATCH MERGE HEAD \
+        --origins "$WEB_APP_URL" "$CANONICAL_WEB_APP_URL" "http://localhost:5173" "http://localhost:5000" "http://localhost:3000" "http://127.0.0.1:5173" \
+        --allowed-headers "*" \
+        --exposed-headers "*" \
+        --max-age 3600 >/dev/null
+
+    log_success "Storage CORS configured"
+}
+
 print_next_steps() {
     echo ""
     echo "============================================"
@@ -262,9 +314,7 @@ print_next_steps() {
     echo "     - VITE_AZURE_STORAGE_ACCOUNT_NAME"
     echo "     - VITE_AZURE_STORAGE_SAS_TOKEN"
     echo ""
-    echo "  3. Update CORS settings with your Static Web App URL:"
-    echo "     - Go to Azure Portal > Storage Account > CORS"
-    echo "     - Add your Static Web App URL to allowed origins"
+    echo "  3. CORS is configured automatically for the deployed Static Web App URL and localhost"
     echo ""
     echo "============================================"
     echo ""
@@ -288,6 +338,7 @@ main() {
     deploy_infrastructure
     show_outputs
     generate_sas_token
+    configure_storage_cors
     print_next_steps
     
     log_success "Deployment complete!"

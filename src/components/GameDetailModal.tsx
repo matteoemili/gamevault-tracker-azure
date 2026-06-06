@@ -87,6 +87,10 @@ export function GameDetailModal({ game, onClose, categories }: GameDetailModalPr
                 <Row label="Serial">{game.serial.toUpperCase()}</Row>
               )}
 
+              {game.rating != null && (
+                <Row label="Rating">{formatRating(game.rating)}</Row>
+              )}
+
               {game.acquired && (
                 <Row label="Purchase price">{formatPrice(game.purchasePrice)}</Row>
               )}
@@ -133,4 +137,8 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       <dd className="text-foreground font-medium">{children}</dd>
     </div>
   );
+}
+
+function formatRating(rating: number): string {
+  return `${'★'.repeat(rating)}${'☆'.repeat(5 - rating)} (${rating}/5)`;
 }

@@ -8,6 +8,8 @@ export interface Game {
    *  Used to resolve box-art from PSXDataCenter-style cover repositories. */
   serial?: string;
   acquired: boolean;
+  /** Optional player rating from 1 (lowest) to 5 (highest). */
+  rating?: 1 | 2 | 3 | 4 | 5;
   targetPrice?: number;
   priority?: boolean;
   purchasePrice?: number;

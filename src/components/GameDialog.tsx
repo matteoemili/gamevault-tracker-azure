@@ -53,6 +53,7 @@ export function GameDialog({ open, onOpenChange, onSave, game, categories }: Gam
       // Store undefined (not empty string) so Azure Table entities stay clean.
       serial: formData.serial?.trim() || undefined,
       acquired: formData.acquired || false,
+      rating: formData.acquired ? formData.rating : undefined,
       // Use ?? undefined to normalise any null that may have arrived from
       // Azure Table Storage JSON round-trips (JSON preserves null; TypeScript
       // optional fields expect undefined). This prevents null from being
@@ -137,7 +138,7 @@ export function GameDialog({ open, onOpenChange, onSave, game, categories }: Gam
             <Switch
               id="acquired"
               checked={formData.acquired || false}
-              onCheckedChange={(checked) => setFormData(prev => ({ ...prev, acquired: checked }))}
+              onCheckedChange={(checked) => setFormData(prev => ({ ...prev, acquired: checked, rating: checked ? prev.rating : undefined }))}
             />
             <Label htmlFor="acquired">Acquired</Label>
           </div>
@@ -172,6 +173,31 @@ export function GameDialog({ open, onOpenChange, onSave, game, categories }: Gam
 
           {formData.acquired && (
             <>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="rating">Rating</Label>
+                <Select
+                  value={formData.rating ? String(formData.rating) : 'none'}
+                  onValueChange={(value) =>
+                    setFormData(prev => ({
+                      ...prev,
+                      rating: value === 'none' ? undefined : (Number(value) as 1 | 2 | 3 | 4 | 5),
+                    }))
+                  }
+                >
+                  <SelectTrigger id="rating">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Unrated</SelectItem>
+                    <SelectItem value="1">1★</SelectItem>
+                    <SelectItem value="2">2★</SelectItem>
+                    <SelectItem value="3">3★</SelectItem>
+                    <SelectItem value="4">4★</SelectItem>
+                    <SelectItem value="5">5★</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="flex flex-col gap-2">
                 <Label htmlFor="purchasePrice">Purchase Price</Label>
                 <Input

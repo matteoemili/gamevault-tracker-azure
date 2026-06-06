@@ -5,6 +5,7 @@ const CSV_HEADERS = [
   'Platform',
   'Serial',
   'Acquired',
+  'Rating',
   'Target Price',
   'Priority',
   'Purchase Price',
@@ -26,6 +27,7 @@ export function exportGamesToCSV(games: Game[]): string {
       game.platform,
       escapeCSVField(game.serial || ''),
       game.acquired ? 'Yes' : 'No',
+      game.rating?.toString() || '',
       game.targetPrice?.toString() || '',
       game.priority ? 'Yes' : 'No',
       game.purchasePrice?.toString() || '',
@@ -79,6 +81,7 @@ export function parseCSV(
     const values = parseCSVLine(lines[i]);
 
     if (values.length === 0) continue;
+    if (values.every(value => !value.trim())) continue;
 
     // No strict column-count gate: header-based lookup handles extra or missing
     // columns gracefully. Name and Platform are validated explicitly below.
@@ -87,6 +90,7 @@ export function parseCSV(
     const platform     = col(values, 'platform');
     const serial       = col(values, 'serial');
     const acquired     = col(values, 'acquired');
+    const rating       = col(values, 'rating');
     const targetPrice  = col(values, 'target price');
     const priority     = col(values, 'priority');
     const purchasePrice = col(values, 'purchase price');
@@ -111,6 +115,7 @@ export function parseCSV(
     
     const isAcquired = acquired.toLowerCase() === 'yes' || acquired === '1' || acquired.toLowerCase() === 'true';
     const isPriority = priority.toLowerCase() === 'yes' || priority === '1' || priority.toLowerCase() === 'true';
+    const parsedRating = parseRating(rating);
     
     const game: Game = {
       id: crypto.randomUUID(),
@@ -118,6 +123,7 @@ export function parseCSV(
        platform: canonicalPlatform,
       serial: serial?.trim() || undefined,
       acquired: isAcquired,
+      rating: isAcquired ? parsedRating : undefined,
       targetPrice: targetPrice ? parseFloat(targetPrice) : undefined,
       priority: isPriority || undefined,
       purchasePrice: purchasePrice ? parseFloat(purchasePrice) : undefined,
@@ -127,6 +133,12 @@ export function parseCSV(
     };
     
     games.push(game);
+  }
+
+  function parseRating(raw: string): 1 | 2 | 3 | 4 | 5 | undefined {
+    if (!raw?.trim()) return undefined;
+    const numeric = Number.parseInt(raw.trim(), 10);
+    return numeric >= 1 && numeric <= 5 ? (numeric as 1 | 2 | 3 | 4 | 5) : undefined;
   }
   
   return { games, errors };
