@@ -1,7 +1,7 @@
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
-  name: GameVault Tracker
+  name: gamevault-tracker-azure
   description: A game collection management system originally vibe-coded in GitHub Spark and subsequently converted into a real Azure application.
   annotations:
     github.com/project-slug: matteoemili/gamevault-tracker-azure
