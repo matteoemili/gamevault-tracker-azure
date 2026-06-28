@@ -2,19 +2,68 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: gamevault-tracker-azure-iac
-  description: The infrastructure as code for the GameVault Tracker Azure application.
+  description: Azure Bicep infrastructure for GameVault Tracker, including Static Web App hosting and Azure Table Storage data resources.
   annotations:
     github.com/project-slug: matteoemili/gamevault-tracker-azure
     backstage.io/techdocs-ref: dir:.
   tags:
-    - react
     - azure
+    - bicep
+    - iac
+    - static-web-apps
+    - table-storage
   links:
     - url: https://github.com/matteoemili/gamevault-tracker-azure
       title: Source Code
       icon: github
+    - url: https://github.com/matteoemili/gamevault-tracker-azure/tree/main/infra
+      title: Bicep Templates
+      icon: docs
+    - url: https://github.com/matteoemili/gamevault-tracker-azure/blob/main/docs/INFRASTRUCTURE.md
+      title: Infrastructure Documentation
+      icon: docs
+    - url: https://github.com/matteoemili/gamevault-tracker-azure/blob/main/scripts/deploy-infra.sh
+      title: Deployment Script
+      icon: docs
 spec:
   type: iac
   system: gamevault-tracker-azure # Optional: groups components together
   lifecycle: production # e.g., experimental, production, deprecated
   owner: acme # Links to a Group or User entity
+  dependsOn:
+    - resource:default/gamevault-tracker-azure-static-web-app
+    - resource:default/gamevault-tracker-azure-table-storage
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: gamevault-tracker-azure-static-web-app
+  description: Azure Static Web App provisioned by infra/main.bicep to host the Vite React frontend from the dist build output.
+  annotations:
+    github.com/project-slug: matteoemili/gamevault-tracker-azure
+  tags:
+    - azure
+    - static-web-apps
+    - hosting
+spec:
+  type: static-site
+  system: gamevault-tracker-azure
+  lifecycle: production
+  owner: acme
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: gamevault-tracker-azure-table-storage
+  description: Azure Storage Account Table Service provisioned by infra/main.bicep with games and categories tables plus browser CORS rules.
+  annotations:
+    github.com/project-slug: matteoemili/gamevault-tracker-azure
+  tags:
+    - azure
+    - storage
+    - table-storage
+spec:
+  type: database
+  system: gamevault-tracker-azure
+  lifecycle: production
+  owner: acme

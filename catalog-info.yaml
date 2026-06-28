@@ -16,3 +16,16 @@ metadata:
 spec:
   lifecycle: production # e.g., experimental, production, deprecated
   owner: acme # Links to a Group or User entity
+---
+apiVersion: backstage.io/v1alpha1
+kind: Location
+metadata:
+  name: gamevault-tracker-azure-contained-catalogs
+  description: Backstage catalog descriptors contained in this repository.
+  annotations:
+    github.com/project-slug: matteoemili/gamevault-tracker-azure
+spec:
+  targets:
+    - ./src/catalog-info.yaml
+    - ./infra/catalog-info.yaml
+
