@@ -7,6 +7,7 @@
 #   2. `bash -n` syntax checks on every project shell script.
 #   3. ShellCheck (if installed) as a soft, non-fatal warning pass.
 #   4. The output-schema.sh self-test suite.
+#   5. Platform and instance-route CLI contract tests.
 #
 # See specs/001-multi-instance-platform/quickstart.md "Stage 1".
 # Bash 3.2 compatible.
@@ -108,6 +109,25 @@ if [ -x "$SCHEMA_SELF_TEST" ]; then
 else
   fail "output-schema.sh not found or not executable: $SCHEMA_SELF_TEST"
 fi
+
+# ----------------------------------------------------------------------------
+# 5. Lifecycle CLI contract tests (offline only)
+# ----------------------------------------------------------------------------
+for cli_test in \
+  "$PROJECT_ROOT/tests/infrastructure/contracts/platform-cli.sh" \
+  "$PROJECT_ROOT/tests/infrastructure/contracts/instance-route-cli.sh"
+do
+  if [ -x "$cli_test" ]; then
+    log "Running $(basename "$cli_test")..."
+    if "$cli_test"; then
+      log "  $(basename "$cli_test") passed"
+    else
+      fail "$(basename "$cli_test") reported failures"
+    fi
+  else
+    fail "CLI contract test not found or not executable: $cli_test"
+  fi
+done
 
 # ----------------------------------------------------------------------------
 # Summary

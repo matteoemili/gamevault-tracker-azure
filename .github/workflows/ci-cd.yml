@@ -43,11 +43,15 @@ jobs:
     outputs:
       instanceId: ${{ steps.set_instance.outputs.instanceId }}
       resourceGroup: ${{ steps.set_instance.outputs.resourceGroup }}
+      environment: ${{ steps.set_instance.outputs.environment }}
       storageAccountName: ${{ steps.deploy.outputs.storageAccountName }}
       staticWebAppName: ${{ steps.deploy.outputs.staticWebAppName }}
       staticWebAppUrl: ${{ steps.deploy.outputs.staticWebAppUrl }}
       gamesTableName: ${{ steps.deploy.outputs.gamesTableName }}
       categoriesTableName: ${{ steps.deploy.outputs.categoriesTableName }}
+    concurrency:
+      group: instance-infrastructure-${{ github.event.inputs.instance_id || github.event.pull_request.number || github.ref_name }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
@@ -60,15 +64,17 @@ jobs:
             ENVIRONMENT="${{ inputs.environment }}"
             INPUT_INSTANCE_ID="${{ inputs.instance_id }}"
           elif [ "$EVENT_NAME" == "pull_request" ]; then
-            ENVIRONMENT="pr"
+            # Route registration and instance Bicep support dev/staging/prod.
+            # PR instances use dev infrastructure with their own stable ID.
+            ENVIRONMENT="dev"
             INPUT_INSTANCE_ID="pr${{ github.event.pull_request.number }}"
           else
             ENVIRONMENT="prod"
             INPUT_INSTANCE_ID=""
           fi
-          
+
           echo "Environment: $ENVIRONMENT"
-          
+
           # Determine instance ID
           if [ -n "$INPUT_INSTANCE_ID" ]; then
             # Use provided instance ID (for redeployment)
@@ -79,19 +85,19 @@ jobs:
             INSTANCE_ID=$(openssl rand -hex 4)
             echo "🆕 Generated new instance ID: $INSTANCE_ID"
           fi
-          
+
           # Set resource group name
           RESOURCE_GROUP="rg-gamevault-${INSTANCE_ID}"
-          
+
           echo "instanceId=$INSTANCE_ID" >> $GITHUB_OUTPUT
           echo "resourceGroup=$RESOURCE_GROUP" >> $GITHUB_OUTPUT
           echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
-          
+
           # Set environment for subsequent steps
           echo "AZURE_RESOURCE_GROUP=$RESOURCE_GROUP" >> $GITHUB_ENV
           echo "DEPLOYMENT_ENVIRONMENT=$ENVIRONMENT" >> $GITHUB_ENV
           echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
-          
+
           # Determine bicep params file
           if [ "$ENVIRONMENT" == "dev" ] || [ "$ENVIRONMENT" == "pr" ]; then
             echo "BICEP_PARAMS_FILE=infra/main.dev.bicepparam" >> $GITHUB_ENV
@@ -127,7 +133,7 @@ jobs:
           echo "Environment: ${{ env.DEPLOYMENT_ENVIRONMENT }}"
           echo "Resource Group: ${{ env.AZURE_RESOURCE_GROUP }}"
           echo "Params File: ${{ env.BICEP_PARAMS_FILE }}"
-          
+
           DEPLOYMENT_OUTPUT=$(az deployment group create \
             --name "gamevault-${{ github.run_number }}" \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
@@ -136,10 +142,10 @@ jobs:
             --parameters instanceId=${{ env.INSTANCE_ID }} \
             --query 'properties.outputs' \
             --output json)
-          
+
           echo "📊 Deployment outputs:"
           echo "$DEPLOYMENT_OUTPUT" | jq '.'
-          
+
           # Extract outputs for subsequent jobs
           echo "instanceId=$(echo $DEPLOYMENT_OUTPUT | jq -r '.instanceId.value')" >> $GITHUB_OUTPUT
           echo "storageAccountName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.storageAccountName.value')" >> $GITHUB_OUTPUT
@@ -147,18 +153,18 @@ jobs:
           echo "staticWebAppUrl=$(echo $DEPLOYMENT_OUTPUT | jq -r '.staticWebAppUrl.value')" >> $GITHUB_OUTPUT
           echo "gamesTableName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.gamesTableName.value')" >> $GITHUB_OUTPUT
           echo "categoriesTableName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.categoriesTableName.value')" >> $GITHUB_OUTPUT
-          
+
           echo "✅ Infrastructure deployed successfully"
 
       - name: Configure Storage CORS
         run: |
           STORAGE_ACCOUNT="${{ steps.deploy.outputs.storageAccountName }}"
           WEB_APP_URL="${{ steps.deploy.outputs.staticWebAppUrl }}"
-          
+
           echo "🌐 Configuring CORS for Table Service..."
           echo "Storage Account: $STORAGE_ACCOUNT"
           echo "Allowed Origin: $WEB_APP_URL"
-          
+
           az storage cors add \
             --account-name "$STORAGE_ACCOUNT" \
             --services t \
@@ -167,7 +173,7 @@ jobs:
             --allowed-headers "*" \
             --exposed-headers "*" \
             --max-age 3600
-          
+
           echo "✅ CORS configured successfully"
 
       - name: Display Deployment Summary
@@ -199,13 +205,19 @@ jobs:
     runs-on: ubuntu-latest
     name: Build and Deploy Job
     needs: deploy_infrastructure
+    concurrency:
+      group: instance-route-${{ needs.deploy_infrastructure.outputs.instanceId }}
+      cancel-in-progress: false
     env:
       STATIC_WEB_APP: ${{ needs.deploy_infrastructure.outputs.staticWebAppName }}
       STORAGE_ACCOUNT: ${{ needs.deploy_infrastructure.outputs.storageAccountName }}
       AZURE_RESOURCE_GROUP: ${{ needs.deploy_infrastructure.outputs.resourceGroup }}
+      DEPLOYMENT_ENVIRONMENT: ${{ needs.deploy_infrastructure.outputs.environment }}
+      PLATFORM_RESOURCE_GROUP: ${{ vars.GAMEVAULT_PLATFORM_RESOURCE_GROUP }}
+      FRONT_DOOR_PROFILE: gvt-afd-${{ needs.deploy_infrastructure.outputs.environment }}
 
     steps:
-        
+
       - uses: actions/checkout@v4
         with:
           submodules: true
@@ -220,24 +232,24 @@ jobs:
         id: generate_sas
         run: |
           STORAGE_ACCOUNT="${{ env.STORAGE_ACCOUNT }}"
-          
+
           echo "🔑 Retrieving storage account key..."
           ACCOUNT_KEY=$(az storage account keys list \
             --account-name "$STORAGE_ACCOUNT" \
             --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
             --query '[0].value' \
             --output tsv)
-          
+
           if [ -z "$ACCOUNT_KEY" ]; then
             echo "❌ Failed to retrieve storage account key"
             exit 1
           fi
-          
+
           echo "✅ Storage account key retrieved"
-          
+
           # Calculate expiry date (1 year from now)
           EXPIRY=$(date -u -v+1y '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '+1 year' '+%Y-%m-%dT%H:%M:%SZ')
-          
+
           echo "🔐 Generating SAS token (valid until $EXPIRY)..."
           # Generate SAS token with table permissions (Read, Add, Update, Delete)
           SAS_TOKEN=$(az storage account generate-sas \
@@ -249,12 +261,12 @@ jobs:
             --expiry "$EXPIRY" \
             --https-only \
             --output tsv)
-          
+
           if [ -z "$SAS_TOKEN" ]; then
             echo "❌ Failed to generate SAS token"
             exit 1
           fi
-          
+
           echo "✅ SAS token generated successfully (length: ${#SAS_TOKEN} characters)"
           echo "sas_token=$SAS_TOKEN" >> $GITHUB_OUTPUT
 
@@ -314,6 +326,56 @@ jobs:
               VITE_AZURE_CATEGORIES_TABLE_NAME="${{ needs.deploy_infrastructure.outputs.categoriesTableName }}"
           echo "✅ Application settings configured"
 
+      - name: Register Instance Front Door Route
+        id: register_route
+        run: |
+          set -euo pipefail
+          test -n "$PLATFORM_RESOURCE_GROUP" || { echo "GAMEVAULT_PLATFORM_RESOURCE_GROUP repository variable is required" >&2; exit 1; }
+          ./scripts/instance-route.sh register \
+            --instance-id "${{ needs.deploy_infrastructure.outputs.instanceId }}" \
+            --instance-resource-group "$AZURE_RESOURCE_GROUP" \
+            --static-web-app-name "$STATIC_WEB_APP" \
+            --platform-resource-group "$PLATFORM_RESOURCE_GROUP" \
+            --front-door-profile "$FRONT_DOOR_PROFILE" \
+            --subscription-id "$(az account show --query id -o tsv)" \
+            --environment "$DEPLOYMENT_ENVIRONMENT" \
+            --forwarding-config-file route-forwarding-gateway.json \
+            > route-registration.json
+          ENDPOINT_URL=$(jq -r '.route.url' route-registration.json)
+          test -n "$ENDPOINT_URL" && test "$ENDPOINT_URL" != "null"
+          echo "endpointUrl=$ENDPOINT_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Configure Front Door Table CORS
+        run: |
+          ./scripts/cors-add-origin.sh \
+            --storage-account-name "$STORAGE_ACCOUNT" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --subscription-id "$(az account show --query id -o tsv)" \
+            --origin "${{ steps.register_route.outputs.endpointUrl }}"
+
+      - name: Verify Published Front Door Route
+        run: |
+          ./scripts/instance-route.sh verify \
+            --instance-id "${{ needs.deploy_infrastructure.outputs.instanceId }}" \
+            --instance-resource-group "$AZURE_RESOURCE_GROUP" \
+            --static-web-app-name "$STATIC_WEB_APP" \
+            --platform-resource-group "$PLATFORM_RESOURCE_GROUP" \
+            --front-door-profile "$FRONT_DOOR_PROFILE" \
+            --subscription-id "$(az account show --query id -o tsv)" \
+            > route-verification.json
+          jq -e '.status == "Succeeded"' route-verification.json
+
+      - name: Retain Route Registration Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: route-registration-${{ needs.deploy_infrastructure.outputs.instanceId }}
+          if-no-files-found: warn
+          path: |
+            route-registration.json
+            route-verification.json
+            route-forwarding-gateway.json
+
   # ============================================================================
   # Close Pull Request Job
   # ============================================================================
@@ -347,7 +409,7 @@ jobs:
 
           if az group exists --name "$RESOURCE_GROUP" | grep -q "true"; then
             SWA_NAME=$(az staticwebapp list --resource-group $RESOURCE_GROUP --query "[0].name" -o tsv 2>/dev/null || echo "")
-            
+
             if [ -n "$SWA_NAME" ]; then
               echo "Found Static Web App: $SWA_NAME"
               TOKEN=$(az staticwebapp secrets list --name $SWA_NAME --resource-group $RESOURCE_GROUP --query "properties.apiKey" -o tsv)

@@ -21,10 +21,11 @@ Set non-secret local inputs:
 export ENVIRONMENT=dev
 export LOCATION=westeurope
 export PLATFORM_RG=rg-gamevault-platform-dev
-export PLATFORM_PROFILE=afd-gamevault-dev
+export PLATFORM_PROFILE=gvt-afd-dev
 export INSTANCE_A=dev00001
 export INSTANCE_A_RG=rg-gamevault-dev00001
 export INSTANCE_A_SWA=swa-gamevault-dev-dev00001
+export INSTANCE_A_STORAGE_ACCOUNT=stgamevaultdev00001
 ```
 
 ## 1. Offline Validation
@@ -80,10 +81,20 @@ Expected: stable resource IDs, no duplicate resources, WAF in detection mode, di
   --platform-resource-group "$PLATFORM_RG" \
   --front-door-profile "$PLATFORM_PROFILE" \
   --subscription-id "$AZURE_SUBSCRIPTION_ID" \
-  --confirm | tee /tmp/gamevault-route-a.json | jq .
+  --environment "$ENVIRONMENT" \
+  --forwarding-config-file /tmp/gamevault-forwarding-gateway-a.json \
+  | tee /tmp/gamevault-route-a.json | jq .
 
 INSTANCE_A_URL=$(jq -r '.route.url' /tmp/gamevault-route-a.json)
 curl --fail --silent --show-error --location "$INSTANCE_A_URL/" >/dev/null
+
+# The SPA now runs at a Front Door origin, so add that origin to the
+# instance's Azure Table Storage CORS rules before checking existing data.
+./scripts/cors-add-origin.sh \
+  --storage-account-name "$INSTANCE_A_STORAGE_ACCOUNT" \
+  --resource-group "$INSTANCE_A_RG" \
+  --subscription-id "$AZURE_SUBSCRIPTION_ID" \
+  --origin "$INSTANCE_A_URL"
 
 ./scripts/instance-route.sh verify \
   --instance-id "$INSTANCE_A" \
@@ -95,6 +106,33 @@ curl --fail --silent --show-error --location "$INSTANCE_A_URL/" >/dev/null
 ```
 
 Expected: the output contains a stable Azure-provided `https://*.azurefd.net` URL, HTTPS succeeds, and all route association checks pass. Repeating registration returns `NoChange` with the same URL.
+
+### Registration recovery and origin updates
+
+Re-run exactly the same `register` command after an interrupted CI run. It
+returns `NoChange` after convergence and preserves the Azure-managed hostname.
+Malformed IDs, an origin outside `*.azurestaticapps.net`, an unreachable
+origin, a conflicting endpoint, or a full 25-endpoint profile return a failed
+JSON envelope before any route mutation.
+
+To update the application origin without changing the published URL, use the
+same instance ID with an explicit replacement hostname:
+
+```bash
+./scripts/instance-route.sh register \
+  --instance-id "$INSTANCE_A" \
+  --instance-resource-group "$INSTANCE_A_RG" \
+  --static-web-app-name "$INSTANCE_A_SWA" \
+  --platform-resource-group "$PLATFORM_RG" \
+  --front-door-profile "$PLATFORM_PROFILE" \
+  --subscription-id "$AZURE_SUBSCRIPTION_ID" \
+  --environment "$ENVIRONMENT" \
+  --origin-hostname "$REPLACEMENT_SWA_HOSTNAME" | jq .
+```
+
+The command runs Azure validation and what-if before mutation. If either
+rejects the change, the current route remains active. A successful update
+changes only that instance's origin and retains its endpoint hostname.
 
 ## 5. Prove Isolation
 
@@ -134,7 +172,13 @@ Expected: only instance A's endpoint, route, origin group, and origin are remove
 After all stages pass locally, the pipeline calls these exact commands in order:
 
 ```text
-offline validate -> Azure validate -> what-if artifact -> approval -> deploy/register -> verify
+offline validate -> Azure validate -> what-if artifact -> approval -> deploy -> register -> CORS -> verify
 ```
 
-Use GitHub OpenID Connect federation, environment approvals for shared-platform mutation, and a concurrency key containing the environment and instance ID. Do not duplicate the lifecycle logic in workflow YAML.
+The workflow invokes `scripts/instance-route.sh register` and `verify` exactly
+as above, stores the resulting JSON artifacts, and continues to use the
+existing `AZURE_CREDENTIALS_SPONSORSHIP` GitHub secret for Azure login. Set the
+`GAMEVAULT_PLATFORM_RESOURCE_GROUP` repository variable and retain
+instance-scoped concurrency. A separate OpenID Connect identity split can be
+introduced later if the deployment workflow requires stricter privilege
+boundaries. Do not duplicate the lifecycle logic in workflow YAML.

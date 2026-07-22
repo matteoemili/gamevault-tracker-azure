@@ -80,7 +80,7 @@ var resolvedOriginHostName = empty(originHostNameOverride) ? instanceStaticWebAp
 // ----------------------------------------------------------------------------
 
 module route 'modules/instance-route.bicep' = {
-  name: 'instance-route-${instanceId}'
+  name: 'instance-route-module-${instanceId}'
   params: {
     instanceId: instanceId
     environment: environment

@@ -91,7 +91,7 @@ done
 
 OP_ID="$(operation_id platform "${ENVIRONMENT:-unknown}")"
 
-require_value "--environment" "$ENVIRONMENT"
+[ -n "$ENVIRONMENT" ] || fail_fast "$DATA_KEY" "$ACTION" "$OP_ID" "MISSING_REQUIRED_OPTION" "missing value for required option: --environment"
 case "$ENVIRONMENT" in
   dev|staging|prod) ;;
   *) fail_fast "$DATA_KEY" "$ACTION" "$OP_ID" "INVALID_ENVIRONMENT" "environment must be one of: dev, staging, prod" ;;
@@ -100,8 +100,8 @@ esac
 PARAMS_FILE="$PLATFORM_DIR/main.${ENVIRONMENT}.bicepparam"
 
 if [ "$LOCAL_ONLY" -eq 0 ]; then
-  require_value "--subscription-id" "$SUBSCRIPTION_ID"
-  require_value "--resource-group" "$RESOURCE_GROUP"
+  [ -n "$SUBSCRIPTION_ID" ] || fail_fast "$DATA_KEY" "$ACTION" "$OP_ID" "MISSING_REQUIRED_OPTION" "missing value for required option: --subscription-id"
+  [ -n "$RESOURCE_GROUP" ] || fail_fast "$DATA_KEY" "$ACTION" "$OP_ID" "MISSING_REQUIRED_OPTION" "missing value for required option: --resource-group"
 fi
 
 # ----------------------------------------------------------------------------
@@ -124,7 +124,7 @@ front_door_profile_name() {
 
 registered_endpoint_count() {
   profile_name="$1"
-  count=$(az cdn afd endpoint list \
+  count=$(az afd endpoint list \
     --resource-group "$RESOURCE_GROUP" \
     --profile-name "$profile_name" \
     --subscription "$SUBSCRIPTION_ID" \
@@ -349,7 +349,7 @@ cmd_status() {
   fi
 
   profile_name="$(front_door_profile_name)"
-  if ! az cdn profile show --resource-group "$RESOURCE_GROUP" --profile-name "$profile_name" --subscription "$SUBSCRIPTION_ID" >/dev/null 2>&1; then
+  if ! az profile show --resource-group "$RESOURCE_GROUP" --profile-name "$profile_name" --subscription "$SUBSCRIPTION_ID" >/dev/null 2>&1; then
     fail_fast "$DATA_KEY" "$ACTION" "$OP_ID" "PROFILE_NOT_FOUND" "Front Door profile '$profile_name' does not exist; run 'deploy' first"
   fi
 

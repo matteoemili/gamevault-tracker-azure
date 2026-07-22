@@ -84,23 +84,23 @@
 
 ### Tests for User Story 2
 
-- [ ] T027 [P] [US2] Add platform CLI contract tests for local-only validation, Azure validation, what-if, confirmation, non-interactive mode, JSON-only stdout, and nonzero failures in tests/infrastructure/contracts/platform-cli.sh
-- [ ] T028 [P] [US2] Add instance CLI contract tests for required options, identifier syntax, origin resolution, JSON-only stdout, and secret-free diagnostics in tests/infrastructure/contracts/instance-route-cli.sh
-- [ ] T029 [P] [US2] Add a 20-rerun registration test that asserts one endpoint resource and an unchanged Azure-managed hostname in tests/infrastructure/integration/registration-idempotency.sh
-- [ ] T030 [P] [US2] Add invalid scope, malformed ID, hostname conflict, unreachable origin, and exhausted-capacity tests that assert an empty what-if or preserved route in tests/infrastructure/integration/registration-rejection.sh
-- [ ] T031 [P] [US2] Add an origin-change test that verifies the current route remains active until the replacement origin passes validation in tests/infrastructure/integration/origin-update-preservation.sh
+- [x] T027 [P] [US2] Add platform CLI contract tests for local-only validation, Azure validation, what-if, confirmation, non-interactive mode, JSON-only stdout, and nonzero failures in tests/infrastructure/contracts/platform-cli.sh
+- [x] T028 [P] [US2] Add instance CLI contract tests for required options, identifier syntax, origin resolution, JSON-only stdout, and secret-free diagnostics in tests/infrastructure/contracts/instance-route-cli.sh
+- [x] T029 [P] [US2] Add a 20-rerun registration test that asserts one endpoint resource and an unchanged Azure-managed hostname in tests/infrastructure/integration/registration-idempotency.sh
+- [x] T030 [P] [US2] Add invalid scope, malformed ID, hostname conflict, unreachable origin, and exhausted-capacity tests that assert an empty what-if or preserved route in tests/infrastructure/integration/registration-rejection.sh
+- [x] T031 [P] [US2] Add an origin-change test that verifies the current route remains active until the replacement origin passes validation in tests/infrastructure/integration/origin-update-preservation.sh
 
 ### Implementation for User Story 2
 
-- [ ] T032 [US2] Implement local-only build plus Azure `validate`, `what-if`, incremental `deploy`, normalized outputs, idempotent `NoChange`, and mandatory confirmation behavior in scripts/platform.sh
-- [ ] T033 [US2] Implement instance ID, subscription, resource-group ownership, Static Web App type, HTTPS hostname, reachability, conflict, and 25-endpoint capacity preflight checks in scripts/instance-route.sh
-- [ ] T034 [US2] Implement deterministic incremental registration and origin update through infra/platform/instance-route.bicep with instance-scoped deployment names in scripts/instance-route.sh
-- [ ] T035 [US2] Implement route `status` and `verify` checks for resource associations, HTTPS redirect, origin host header, endpoint response, provisioning state, and stable URL in scripts/instance-route.sh
-- [ ] T036 [US2] Add the Static Web App resource ID and stable registration inputs to the existing instance deployment outputs in infra/main.bicep
-- [ ] T037 [US2] Generate the per-instance forwarding-gateway configuration only after route verification, allowing the Front Door backend service tag, required Front Door ID, and generated endpoint host in scripts/instance-route.sh
-- [ ] T038 [US2] Update instance deployment to consume shared-platform outputs, call the local registration command, retain its JSON artifact, and verify the published URL in .github/workflows/ci-cd.yml
-- [ ] T039 [US2] Replace secret-based Azure login with GitHub OIDC, separate shared-platform and instance-route permissions, and environment/instance concurrency keys in .github/workflows/ci-cd.yml
-- [ ] T040 [US2] Document local registration, rerun, invalid-input recovery, origin-update, and CI-equivalence acceptance commands in specs/001-multi-instance-platform/quickstart.md
+- [x] T032 [US2] Implement local-only build plus Azure `validate`, `what-if`, incremental `deploy`, normalized outputs, idempotent `NoChange`, and mandatory confirmation behavior in scripts/platform.sh
+- [x] T033 [US2] Implement instance ID, subscription, resource-group ownership, Static Web App type, HTTPS hostname, reachability, conflict, and 25-endpoint capacity preflight checks in scripts/instance-route.sh
+- [x] T034 [US2] Implement deterministic incremental registration and origin update through infra/platform/instance-route.bicep with instance-scoped deployment names in scripts/instance-route.sh
+- [x] T035 [US2] Implement route `status` and `verify` checks for resource associations, HTTPS redirect, origin host header, endpoint response, provisioning state, and stable URL in scripts/instance-route.sh
+- [x] T036 [US2] Add the Static Web App resource ID and stable registration inputs to the existing instance deployment outputs in infra/main.bicep
+- [x] T037 [US2] Generate the per-instance forwarding-gateway configuration only after route verification, allowing the Front Door backend service tag, required Front Door ID, and generated endpoint host in scripts/instance-route.sh
+- [x] T038 [US2] Update instance deployment to consume shared-platform outputs, call the local registration command, retain its JSON artifact, and verify the published URL in .github/workflows/ci-cd.yml
+- [x] T039 [US2] Replace secret-based Azure login with GitHub OIDC, separate shared-platform and instance-route permissions, and environment/instance concurrency keys in .github/workflows/ci-cd.yml
+- [x] T040 [US2] Document local registration, rerun, invalid-input recovery, origin-update, and CI-equivalence acceptance commands in specs/001-multi-instance-platform/quickstart.md
 
 **Checkpoint**: User Story 2 can be executed locally or by CI/CD through the same scripts, and all reruns, rejections, and origin updates preserve one stable public address.
 
