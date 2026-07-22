@@ -96,13 +96,23 @@ EXISTING_RULES_JSON=$(az storage cors list \
 
 origin_already_present() {
   target_origin="$1"
-  echo "$EXISTING_RULES_JSON" | jq -e --arg o "$target_origin" \
-    '[.[] | select(.AllowedOrigins != null) | .AllowedOrigins[] | select(. == $o or . == "*")] | length > 0' \
-    >/dev/null 2>&1
+  if echo "$EXISTING_RULES_JSON" | jq -e --arg o "$target_origin" \
+    '[.[] | ((.allowedOrigins // []) + (.AllowedOrigins // []))[]] |
+      any(. == $o or . == "*")' >/dev/null 2>&1; then
+    return 0
+  fi
+
+  # The Azure CLI response is a snapshot, so also account for rules added
+  # earlier in this invocation.
+  for added_origin in $ADDED_ORIGINS; do
+    [ "$added_origin" = "$target_origin" ] && return 0
+  done
+  return 1
 }
 
 ADDED=0
 SKIPPED=0
+ADDED_ORIGINS=""
 for origin in $ORIGINS; do
   [ -n "$origin" ] || continue
 
@@ -115,6 +125,7 @@ for origin in $ORIGINS; do
   if [ "$DRY_RUN" = "true" ]; then
     log_info "[dry-run] would add CORS rule for services='$SERVICES' origin: $origin"
     ADDED=$((ADDED + 1))
+    ADDED_ORIGINS="${ADDED_ORIGINS} ${origin}"
     continue
   fi
 
@@ -132,6 +143,7 @@ for origin in $ORIGINS; do
     || die "failed to add CORS rule for origin: $origin"
 
   ADDED=$((ADDED + 1))
+  ADDED_ORIGINS="${ADDED_ORIGINS} ${origin}"
 done
 
 log_success "done: $ADDED origin(s) added/dry-run, $SKIPPED already present"

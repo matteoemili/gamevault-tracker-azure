@@ -15,6 +15,7 @@
 #   --environment <dev|staging|prod> (register only)
 #   --base-name <name>             (register only; default: gvt)
 #   --origin-hostname <hostname>   (register only; optional override)
+#   --expected-origin-hostname <hostname> (verify only; optional CI expectation)
 #   --forwarding-config-file <path> (register only; optional)
 #   --confirm                      (required for unregister)
 #
@@ -56,6 +57,7 @@ Usage: instance-route.sh <register|verify|status|unregister> [options]
   --environment <dev|staging|prod>      (register only)
   --base-name <name>                    (register only; default: gvt)
   --origin-hostname <hostname>   (register only; optional override)
+  --expected-origin-hostname <hostname> (verify only; optional CI expectation)
   --forwarding-config-file <path>       (register only; optional)
   --confirm                      (required for unregister)
 USAGE
@@ -97,6 +99,29 @@ fail_route() {
   exit 1
 }
 
+fail_incremental_deployment() {
+  op_id="$1"
+  deploy_error="$2"
+  failure_instance_json="null"
+  failure_route_json="null"
+
+  # Incremental deployments are not transactional.  A failed deployment can
+  # leave Azure with either the old graph or a partially updated graph, so
+  # report the state we can observe instead of implying a rollback or a
+  # guaranteed previous resource state.
+  failed_endpoint_json=$(endpoint_for_instance)
+  if [ -n "$failed_endpoint_json" ] && [ "$failed_endpoint_json" != "null" ] && [ "$failed_endpoint_json" != "[]" ]; then
+    failure_instance_json=$(instance_object)
+    failure_route_json=$(route_object_from_azure "$failed_endpoint_json") || failure_route_json="null"
+  fi
+
+  failure_message="Azure incremental deployment failed; resource changes may be partial. Inspect the current Azure route state before retrying."
+  [ -n "$deploy_error" ] && failure_message="$failure_message $deploy_error"
+  emit_envelope "$ACTION" "Failed" "$op_id" "$failure_instance_json" "$failure_route_json" "$(diagnostic_array "AZURE_DEPLOY_FAILED" "$failure_message")"
+  log_error "$failure_message" || true
+  exit 1
+}
+
 ACTION="${1:-}"
 [ -n "$ACTION" ] || { usage; exit 2; }
 shift || true
@@ -118,6 +143,7 @@ SUBSCRIPTION_ID=""
 ENVIRONMENT=""
 BASE_NAME="gvt"
 ORIGIN_HOSTNAME=""
+EXPECTED_ORIGIN_HOSTNAME=""
 FORWARDING_CONFIG_FILE=""
 CONFIRM=0
 
@@ -132,6 +158,7 @@ while [ "$#" -gt 0 ]; do
     --environment) ENVIRONMENT="${2:-}"; shift 2 ;;
     --base-name) BASE_NAME="${2:-gvt}"; shift 2 ;;
     --origin-hostname) ORIGIN_HOSTNAME="${2:-}"; shift 2 ;;
+    --expected-origin-hostname|--expected-origin-host) EXPECTED_ORIGIN_HOSTNAME="${2:-}"; shift 2 ;;
     --forwarding-config-file) FORWARDING_CONFIG_FILE="${2:-}"; shift 2 ;;
     --confirm) CONFIRM=1; shift ;;
     *)
@@ -156,6 +183,13 @@ OP_ID="$(operation_id route "$INSTANCE_ID")"
 [ -n "$SUBSCRIPTION_ID" ] || fail_route "$ACTION" "$OP_ID" "MISSING_REQUIRED_OPTION" "missing value for required option: --subscription-id"
 [ -n "$INSTANCE_RESOURCE_GROUP" ] || fail_route "$ACTION" "$OP_ID" "MISSING_REQUIRED_OPTION" "missing value for required option: --instance-resource-group"
 [ -n "$STATIC_WEB_APP_NAME" ] || fail_route "$ACTION" "$OP_ID" "MISSING_REQUIRED_OPTION" "missing value for required option: --static-web-app-name"
+
+if [ -n "$EXPECTED_ORIGIN_HOSTNAME" ]; then
+  case "$EXPECTED_ORIGIN_HOSTNAME" in
+    *.azurestaticapps.net) ;;
+    *) fail_route "$ACTION" "$OP_ID" "INVALID_ORIGIN_HOSTNAME" "expected origin hostname must end in .azurestaticapps.net" ;;
+  esac
+fi
 
 SCRATCH_DIR="$(mktemp -d)"
 trap 'rm -rf "$SCRATCH_DIR"' EXIT
@@ -349,6 +383,18 @@ cmd_register() {
   fi
 
   existing_endpoint=$(echo "$endpoints_json" | jq -c --arg id "$INSTANCE_ID" '[.[] | select(.tags.instanceId == $id)] | .[0] // null')
+  if [ "$existing_endpoint" != "null" ]; then
+    ownership_matches=$(echo "$existing_endpoint" | jq -r \
+      --arg resourceGroup "$INSTANCE_RESOURCE_GROUP" \
+      --arg staticWebApp "$STATIC_WEB_APP_NAME" \
+      '((.tags.instanceResourceGroup // "") == $resourceGroup) and
+       ((.tags.staticWebAppName // "") == $staticWebApp)')
+    if [ "$ownership_matches" != "true" ]; then
+      # Do not include tag values in the envelope or logs: they are Azure
+      # resource metadata and may contain caller-controlled diagnostic text.
+      fail_route "$ACTION" "$OP_ID" "OWNERSHIP_TAG_MISMATCH" "Existing endpoint ownership tags do not match the requested instance resources; registration was not started"
+    fi
+  fi
   endpoint_count=$(echo "$endpoints_json" | jq 'length')
   if [ "$existing_endpoint" = "null" ] && [ "$endpoint_count" -ge 25 ]; then
     fail_route "$ACTION" "$OP_ID" "ENDPOINT_CAPACITY_EXCEEDED" "Front Door profile already has $endpoint_count endpoints (limit: 25)"
@@ -422,7 +468,7 @@ cmd_register() {
       --parameters "${common_parameters[@]}" \
       --mode Incremental -o none 2>"$SCRATCH_DIR/deploy.err"; then
       deploy_error=$(mask_secrets < "$SCRATCH_DIR/deploy.err")
-      fail_route "$ACTION" "$OP_ID" "AZURE_DEPLOY_FAILED" "Deployment failed; a prior route, if present, was preserved: $deploy_error"
+      fail_incremental_deployment "$OP_ID" "$deploy_error"
     fi
     result_status="Succeeded"
   else
@@ -466,6 +512,15 @@ cmd_verify() {
     --origin-name "origin-${INSTANCE_ID}" \
     --subscription "$SUBSCRIPTION_ID" -o json 2>/dev/null) || origin_json='{}'
   origin_host_header=$(echo "$origin_json" | jq -r '.originHostHeader // empty')
+  expected_origin_hostname="$EXPECTED_ORIGIN_HOSTNAME"
+  if [ -z "$expected_origin_hostname" ]; then
+    expected_origin_hostname="$ORIGIN_HOSTNAME"
+  fi
+  if [ -z "$expected_origin_hostname" ]; then
+    # Retain the legacy behavior for callers that do not yet supply the
+    # deployed hostname explicitly.
+    expected_origin_hostname="$origin_host_header"
+  fi
   if [ -z "$ORIGIN_HOSTNAME" ]; then
     ORIGIN_HOSTNAME="$origin_host_header"
   fi
@@ -478,7 +533,7 @@ cmd_verify() {
   }
   [ "$provisioning_state" = "Succeeded" ] || add_failure "ROUTE_NOT_PROVISIONED" "Route provisioning state is '$provisioning_state'"
   [ -n "$origin_host_header" ] || add_failure "ORIGIN_NOT_FOUND" "The expected application origin could not be read"
-  [ -z "$ORIGIN_HOSTNAME" ] || [ "$origin_host_header" = "$ORIGIN_HOSTNAME" ] || add_failure "ORIGIN_HOST_HEADER_MISMATCH" "Origin host header does not match the expected Static Web App hostname"
+  [ -z "$expected_origin_hostname" ] || [ "$origin_host_header" = "$expected_origin_hostname" ] || add_failure "ORIGIN_HOST_HEADER_MISMATCH" "Origin host header does not match the expected Static Web App hostname"
 
   http_status=$(curl -s -o /dev/null -w '%{http_code}' --max-redirs 0 --max-time 15 "http://${endpoint_hostname}/" 2>/dev/null)
   case "$http_status" in 301|302|307|308) ;; *) add_failure "HTTPS_REDIRECT_MISSING" "Expected an HTTP redirect, received status ${http_status:-<none>}" ;; esac

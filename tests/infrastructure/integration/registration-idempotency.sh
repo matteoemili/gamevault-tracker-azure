@@ -1,5 +1,6 @@
 #!/bin/bash
-# T029: Runs registration 20 times and confirms one stable endpoint hostname.
+# T014: Runs registration 20 times with workflow-equivalent inputs and confirms
+# one stable published hostname and endpoint.
 # This is opt-in because it calls Azure: set RUN_AZURE_INTEGRATION=1 and all
 # required ROUTE_* variables before running. Bash 3.2 compatible.
 
@@ -21,6 +22,8 @@ CLI="$ROOT_DIR/scripts/instance-route.sh"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 FIRST_HOSTNAME=""
+FIRST_PUBLISHED_URL=""
+FORWARDING_CONFIG_FILE="$TMP_DIR/route-forwarding-gateway.json"
 
 for attempt in $(seq 1 20); do
   "$CLI" register \
@@ -30,7 +33,8 @@ for attempt in $(seq 1 20); do
     --platform-resource-group "$ROUTE_PLATFORM_RESOURCE_GROUP" \
     --front-door-profile "$ROUTE_FRONT_DOOR_PROFILE" \
     --subscription-id "$ROUTE_SUBSCRIPTION_ID" \
-    --environment "$ROUTE_ENVIRONMENT" >"$TMP_DIR/result.json"
+    --environment "$ROUTE_ENVIRONMENT" \
+    --forwarding-config-file "$FORWARDING_CONFIG_FILE" >"$TMP_DIR/result.json"
 
   hostname=$(jq -r '.route.endpointHostName' "$TMP_DIR/result.json")
   [ -n "$hostname" ] && [ "$hostname" != "null" ] || { echo "[registration-idempotency] missing endpoint hostname on attempt $attempt" >&2; exit 1; }
@@ -38,6 +42,15 @@ for attempt in $(seq 1 20); do
     FIRST_HOSTNAME="$hostname"
   elif [ "$hostname" != "$FIRST_HOSTNAME" ]; then
     echo "[registration-idempotency] hostname changed from $FIRST_HOSTNAME to $hostname on attempt $attempt" >&2
+    exit 1
+  fi
+
+  published_url=$(jq -r '.route.url' "$TMP_DIR/result.json")
+  [ -n "$published_url" ] && [ "$published_url" != "null" ] || { echo "[registration-idempotency] missing published URL on attempt $attempt" >&2; exit 1; }
+  if [ -z "$FIRST_PUBLISHED_URL" ]; then
+    FIRST_PUBLISHED_URL="$published_url"
+  elif [ "$published_url" != "$FIRST_PUBLISHED_URL" ]; then
+    echo "[registration-idempotency] published URL changed from $FIRST_PUBLISHED_URL to $published_url on attempt $attempt" >&2
     exit 1
   fi
 done

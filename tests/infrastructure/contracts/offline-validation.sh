@@ -8,6 +8,7 @@
 #   3. ShellCheck (if installed) as a soft, non-fatal warning pass.
 #   4. The output-schema.sh self-test suite.
 #   5. Platform and instance-route CLI contract tests.
+#   6. Front Door registration workflow and CORS contract tests.
 #
 # See specs/001-multi-instance-platform/quickstart.md "Stage 1".
 # Bash 3.2 compatible.
@@ -126,6 +127,25 @@ do
     fi
   else
     fail "CLI contract test not found or not executable: $cli_test"
+  fi
+done
+
+# ----------------------------------------------------------------------------
+# 6. Front Door publication contract tests (offline only)
+# ----------------------------------------------------------------------------
+for contract_test in \
+  "$PROJECT_ROOT/tests/infrastructure/contracts/front-door-registration-workflow.sh" \
+  "$PROJECT_ROOT/tests/infrastructure/contracts/cors-add-origin.sh"
+do
+  if [ -x "$contract_test" ]; then
+    log "Running $(basename "$contract_test")..."
+    if "$contract_test"; then
+      log "  $(basename "$contract_test") passed"
+    else
+      fail "$(basename "$contract_test") reported failures"
+    fi
+  else
+    fail "contract test not found or not executable: $contract_test"
   fi
 done
 

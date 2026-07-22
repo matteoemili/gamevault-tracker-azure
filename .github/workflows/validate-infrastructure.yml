@@ -7,12 +7,14 @@ on:
       - 'scripts/**'
       - 'tests/infrastructure/**'
       - '.github/workflows/validate-infrastructure.yml'
+      - '.github/workflows/ci-cd.yml'
   push:
     branches: [main]
     paths:
       - 'infra/**'
       - 'scripts/**'
       - 'tests/infrastructure/**'
+      - '.github/workflows/ci-cd.yml'
   workflow_dispatch:
 
 jobs:

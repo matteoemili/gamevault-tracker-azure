@@ -46,6 +46,7 @@ jobs:
       environment: ${{ steps.set_instance.outputs.environment }}
       storageAccountName: ${{ steps.deploy.outputs.storageAccountName }}
       staticWebAppName: ${{ steps.deploy.outputs.staticWebAppName }}
+      staticWebAppDefaultHostname: ${{ steps.deploy.outputs.staticWebAppDefaultHostname }}
       staticWebAppUrl: ${{ steps.deploy.outputs.staticWebAppUrl }}
       gamesTableName: ${{ steps.deploy.outputs.gamesTableName }}
       categoriesTableName: ${{ steps.deploy.outputs.categoriesTableName }}
@@ -150,6 +151,7 @@ jobs:
           echo "instanceId=$(echo $DEPLOYMENT_OUTPUT | jq -r '.instanceId.value')" >> $GITHUB_OUTPUT
           echo "storageAccountName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.storageAccountName.value')" >> $GITHUB_OUTPUT
           echo "staticWebAppName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.staticWebAppName.value')" >> $GITHUB_OUTPUT
+          echo "staticWebAppDefaultHostname=$(echo $DEPLOYMENT_OUTPUT | jq -r '.staticWebAppDefaultHostname.value')" >> $GITHUB_OUTPUT
           echo "staticWebAppUrl=$(echo $DEPLOYMENT_OUTPUT | jq -r '.staticWebAppUrl.value')" >> $GITHUB_OUTPUT
           echo "gamesTableName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.gamesTableName.value')" >> $GITHUB_OUTPUT
           echo "categoriesTableName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.categoriesTableName.value')" >> $GITHUB_OUTPUT
@@ -210,11 +212,10 @@ jobs:
       cancel-in-progress: false
     env:
       STATIC_WEB_APP: ${{ needs.deploy_infrastructure.outputs.staticWebAppName }}
+      STATIC_WEB_APP_DEFAULT_HOSTNAME: ${{ needs.deploy_infrastructure.outputs.staticWebAppDefaultHostname }}
       STORAGE_ACCOUNT: ${{ needs.deploy_infrastructure.outputs.storageAccountName }}
       AZURE_RESOURCE_GROUP: ${{ needs.deploy_infrastructure.outputs.resourceGroup }}
       DEPLOYMENT_ENVIRONMENT: ${{ needs.deploy_infrastructure.outputs.environment }}
-      PLATFORM_RESOURCE_GROUP: ${{ vars.GAMEVAULT_PLATFORM_RESOURCE_GROUP }}
-      FRONT_DOOR_PROFILE: gvt-afd-${{ needs.deploy_infrastructure.outputs.environment }}
 
     steps:
 
@@ -326,13 +327,132 @@ jobs:
               VITE_AZURE_CATEGORIES_TABLE_NAME="${{ needs.deploy_infrastructure.outputs.categoriesTableName }}"
           echo "✅ Application settings configured"
 
+  # ============================================================================
+  # Serialized publication job
+  # ============================================================================
+  publish_front_door:
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    name: Publish Front Door Route
+    needs:
+      - deploy_infrastructure
+      - build_and_deploy_job
+    outputs:
+      publishedUrl: ${{ steps.publish_result.outputs.publishedUrl }}
+    concurrency:
+      # All instances in an environment share one Front Door profile/WAF
+      # association collection, so publication is serialized per profile.
+      group: front-door-publication-${{ needs.deploy_infrastructure.outputs.environment }}
+      cancel-in-progress: false
+    env:
+      INSTANCE_ID: ${{ needs.deploy_infrastructure.outputs.instanceId }}
+      STATIC_WEB_APP: ${{ needs.deploy_infrastructure.outputs.staticWebAppName }}
+      STATIC_WEB_APP_DEFAULT_HOSTNAME: ${{ needs.deploy_infrastructure.outputs.staticWebAppDefaultHostname }}
+      STORAGE_ACCOUNT: ${{ needs.deploy_infrastructure.outputs.storageAccountName }}
+      AZURE_RESOURCE_GROUP: ${{ needs.deploy_infrastructure.outputs.resourceGroup }}
+      DEPLOYMENT_ENVIRONMENT: ${{ needs.deploy_infrastructure.outputs.environment }}
+      PLATFORM_RESOURCE_GROUP_DEV: ${{ vars.GAMEVAULT_PLATFORM_RESOURCE_GROUP_DEV }}
+      PLATFORM_RESOURCE_GROUP_STAGING: ${{ vars.GAMEVAULT_PLATFORM_RESOURCE_GROUP_STAGING }}
+      PLATFORM_RESOURCE_GROUP_PROD: ${{ vars.GAMEVAULT_PLATFORM_RESOURCE_GROUP_PROD }}
+      FRONT_DOOR_PROFILE_DEV: ${{ vars.GAMEVAULT_FRONT_DOOR_PROFILE_DEV }}
+      FRONT_DOOR_PROFILE_STAGING: ${{ vars.GAMEVAULT_FRONT_DOOR_PROFILE_STAGING }}
+      FRONT_DOOR_PROFILE_PROD: ${{ vars.GAMEVAULT_FRONT_DOOR_PROFILE_PROD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize Publication Result
+        run: |
+          jq -n \
+            --arg runId "${{ github.run_id }}" \
+            --arg instanceId "$INSTANCE_ID" \
+            '{
+              schemaVersion: "1.0",
+              runId: $runId,
+              instanceId: $instanceId,
+              stage: "Preflight",
+              status: "Pending",
+              publishedUrl: null,
+              registrationResultFile: null,
+              verificationResultFile: null,
+              diagnostics: []
+            }' > publication-result.json
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS_SPONSORSHIP }}
+
+      - name: Resolve Environment Platform Configuration
+        id: resolve_platform
+        run: |
+          set +e
+          CONFIG_OK=true
+          PLATFORM_RESOURCE_GROUP=""
+          FRONT_DOOR_PROFILE=""
+          case "$DEPLOYMENT_ENVIRONMENT" in
+            dev) PLATFORM_RESOURCE_GROUP="$PLATFORM_RESOURCE_GROUP_DEV"; FRONT_DOOR_PROFILE="$FRONT_DOOR_PROFILE_DEV" ;;
+            staging) PLATFORM_RESOURCE_GROUP="$PLATFORM_RESOURCE_GROUP_STAGING"; FRONT_DOOR_PROFILE="$FRONT_DOOR_PROFILE_STAGING" ;;
+            prod) PLATFORM_RESOURCE_GROUP="$PLATFORM_RESOURCE_GROUP_PROD"; FRONT_DOOR_PROFILE="$FRONT_DOOR_PROFILE_PROD" ;;
+            *) CONFIG_OK=false ;;
+          esac
+          [ -n "${PLATFORM_RESOURCE_GROUP:-}" ] || CONFIG_OK=false
+          [ -n "${FRONT_DOOR_PROFILE:-}" ] || CONFIG_OK=false
+          if [ "$CONFIG_OK" != "true" ]; then
+            MISSING_INPUTS=""
+            [ -n "$PLATFORM_RESOURCE_GROUP" ] || MISSING_INPUTS="platform resource group"
+            [ -n "$FRONT_DOOR_PROFILE" ] || MISSING_INPUTS="${MISSING_INPUTS:+$MISSING_INPUTS, }Front Door profile"
+            [ "$DEPLOYMENT_ENVIRONMENT" = "dev" ] || [ "$DEPLOYMENT_ENVIRONMENT" = "staging" ] || [ "$DEPLOYMENT_ENVIRONMENT" = "prod" ] ||
+              MISSING_INPUTS="${MISSING_INPUTS:+$MISSING_INPUTS, }supported deployment environment"
+            jq --arg missing "$MISSING_INPUTS" \
+              '.stage = "Preflight" | .status = "Failed" |
+               .diagnostics = [{code:"MISSING_PLATFORM_CONFIGURATION",message:("Missing or invalid " + $missing)}]' \
+              publication-result.json > publication-result.tmp
+            mv publication-result.tmp publication-result.json
+            exit 1
+          fi
+          {
+            echo "PLATFORM_RESOURCE_GROUP=$PLATFORM_RESOURCE_GROUP"
+            echo "FRONT_DOOR_PROFILE=$FRONT_DOOR_PROFILE"
+          } >> "$GITHUB_ENV"
+
+      - name: Validate Publication Inputs
+        id: preflight
+        run: |
+          set +e
+          SUBSCRIPTION_ID="$(az account show --query id -o tsv 2>/dev/null)"
+          PREFLIGHT_OK=true
+          test -n "$SUBSCRIPTION_ID" || PREFLIGHT_OK=false
+          test -n "$INSTANCE_ID" || PREFLIGHT_OK=false
+          test -n "$AZURE_RESOURCE_GROUP" || PREFLIGHT_OK=false
+          test -n "$STATIC_WEB_APP" || PREFLIGHT_OK=false
+          test -n "$STATIC_WEB_APP_DEFAULT_HOSTNAME" || PREFLIGHT_OK=false
+          test -n "$STORAGE_ACCOUNT" || PREFLIGHT_OK=false
+          test -n "$PLATFORM_RESOURCE_GROUP" || PREFLIGHT_OK=false
+          test -n "$FRONT_DOOR_PROFILE" || PREFLIGHT_OK=false
+          test "$AZURE_RESOURCE_GROUP" != "$PLATFORM_RESOURCE_GROUP" || PREFLIGHT_OK=false
+          case "$STATIC_WEB_APP_DEFAULT_HOSTNAME" in
+            *.azurestaticapps.net) ;;
+            *) PREFLIGHT_OK=false ;;
+          esac
+          if [ "$PREFLIGHT_OK" != "true" ]; then
+            jq '.stage = "Preflight" | .status = "Failed" |
+              .diagnostics = [{code:"PREFLIGHT_FAILED",message:"Required publication inputs are missing or inconsistent"}]' \
+              publication-result.json > publication-result.tmp
+            mv publication-result.tmp publication-result.json
+            exit 1
+          fi
+          jq --arg stage "Preflight" --arg subscriptionId "$SUBSCRIPTION_ID" \
+            '.stage = $stage | .diagnostics = [{code:"PREFLIGHT_OK",message:"Inputs validated for subscription " + $subscriptionId}]' \
+            publication-result.json > publication-result.tmp
+          mv publication-result.tmp publication-result.json
+          echo "SUBSCRIPTION_ID=$SUBSCRIPTION_ID" >> "$GITHUB_ENV"
+
       - name: Register Instance Front Door Route
         id: register_route
         run: |
-          set -euo pipefail
-          test -n "$PLATFORM_RESOURCE_GROUP" || { echo "GAMEVAULT_PLATFORM_RESOURCE_GROUP repository variable is required" >&2; exit 1; }
+          set +e
           ./scripts/instance-route.sh register \
-            --instance-id "${{ needs.deploy_infrastructure.outputs.instanceId }}" \
+            --instance-id "$INSTANCE_ID" \
             --instance-resource-group "$AZURE_RESOURCE_GROUP" \
             --static-web-app-name "$STATIC_WEB_APP" \
             --platform-resource-group "$PLATFORM_RESOURCE_GROUP" \
@@ -341,29 +461,134 @@ jobs:
             --environment "$DEPLOYMENT_ENVIRONMENT" \
             --forwarding-config-file route-forwarding-gateway.json \
             > route-registration.json
-          ENDPOINT_URL=$(jq -r '.route.url' route-registration.json)
-          test -n "$ENDPOINT_URL" && test "$ENDPOINT_URL" != "null"
+          REGISTER_RC=$?
+          set -e
+          # The lifecycle CLI normally emits a schema-valid envelope even on
+          # failure.  Keep a sanitized fallback artifact if it exits before
+          # producing one, rather than losing the failure evidence or exposing
+          # command output in the publication artifact.
+          if [ ! -s route-registration.json ] || ! jq -e \
+            'type == "object" and (.status | type == "string") and
+             (has("instance") and has("route") and has("diagnostics"))' \
+            route-registration.json >/dev/null 2>&1; then
+            printf '%s\n' '{"schemaVersion":"1.0","action":"register","status":"Failed","operationId":"unknown","instance":null,"route":null,"diagnostics":[{"code":"REGISTRATION_NO_RESULT","message":"Registration command failed without a valid result envelope"}]}' > route-registration.json
+          fi
+          ENDPOINT_URL="$(jq -r '.route.url // empty' route-registration.json 2>/dev/null || true)"
+          REGISTRATION_STATUS="$(jq -r '.status // empty' route-registration.json 2>/dev/null || true)"
+          if [ "$REGISTER_RC" -ne 0 ] || ! jq -e \
+            --arg url "$ENDPOINT_URL" \
+            '.status as $status |
+             ($status == "Succeeded" or $status == "NoChange" or $status == "Degraded") and
+             ($url | test("^https://[^[:space:]]+$")) and
+             (.route.url == $url)' route-registration.json >/dev/null 2>&1; then
+            jq --arg stage "Register" --arg file "route-registration.json" \
+              --arg message "Registration failed or did not return an allowed HTTPS route URL" \
+              '.stage = $stage | .status = "Failed" | .registrationResultFile = $file |
+               .diagnostics = [{code:"REGISTRATION_FAILED",message:$message}]' \
+              publication-result.json > publication-result.tmp
+            mv publication-result.tmp publication-result.json
+            exit 1
+          fi
+          jq --arg stage "Register" --arg file "route-registration.json" --arg url "$ENDPOINT_URL" \
+            --arg status "$REGISTRATION_STATUS" \
+            '.stage = $stage | .publishedUrl = $url | .registrationResultFile = $file |
+             .diagnostics = [{code:"REGISTRATION_" + $status,message:"Route registration returned " + $status}]' \
+            publication-result.json > publication-result.tmp
+          mv publication-result.tmp publication-result.json
           echo "endpointUrl=$ENDPOINT_URL" >> "$GITHUB_OUTPUT"
 
       - name: Configure Front Door Table CORS
         run: |
+          set +e
           ./scripts/cors-add-origin.sh \
             --storage-account-name "$STORAGE_ACCOUNT" \
             --resource-group "$AZURE_RESOURCE_GROUP" \
-            --subscription-id "$(az account show --query id -o tsv)" \
-            --origin "${{ steps.register_route.outputs.endpointUrl }}"
+            --subscription-id "$SUBSCRIPTION_ID" \
+            --origin "${{ steps.register_route.outputs.endpointUrl }}" >/dev/null
+          CORS_RC=$?
+          set -e
+          if [ "$CORS_RC" -ne 0 ]; then
+            jq '.stage = "Cors" | .status = "Failed" |
+              .diagnostics = [{code:"CORS_ALIGNMENT_FAILED",message:"Published origin could not be aligned with Table Storage CORS"}]' \
+              publication-result.json > publication-result.tmp
+            mv publication-result.tmp publication-result.json
+            exit "$CORS_RC"
+          fi
+          jq '.stage = "Cors" | .diagnostics = [{code:"CORS_ALIGNMENT_SUCCEEDED",message:"Published origin aligned with Table Storage CORS"}]' \
+            publication-result.json > publication-result.tmp
+          mv publication-result.tmp publication-result.json
 
       - name: Verify Published Front Door Route
         run: |
-          ./scripts/instance-route.sh verify \
-            --instance-id "${{ needs.deploy_infrastructure.outputs.instanceId }}" \
-            --instance-resource-group "$AZURE_RESOURCE_GROUP" \
-            --static-web-app-name "$STATIC_WEB_APP" \
-            --platform-resource-group "$PLATFORM_RESOURCE_GROUP" \
-            --front-door-profile "$FRONT_DOOR_PROFILE" \
-            --subscription-id "$(az account show --query id -o tsv)" \
-            > route-verification.json
-          jq -e '.status == "Succeeded"' route-verification.json
+          set +e
+          ATTEMPT=1
+          MAX_ATTEMPTS=5
+          VERIFIED=false
+          while [ "$ATTEMPT" -le "$MAX_ATTEMPTS" ]; do
+            TMP_VERIFICATION="route-verification.json.tmp"
+            ./scripts/instance-route.sh verify \
+              --instance-id "$INSTANCE_ID" \
+              --instance-resource-group "$AZURE_RESOURCE_GROUP" \
+              --static-web-app-name "$STATIC_WEB_APP" \
+              --platform-resource-group "$PLATFORM_RESOURCE_GROUP" \
+              --front-door-profile "$FRONT_DOOR_PROFILE" \
+              --subscription-id "$SUBSCRIPTION_ID" \
+              --expected-origin-hostname "$STATIC_WEB_APP_DEFAULT_HOSTNAME" \
+              > "$TMP_VERIFICATION"
+            VERIFY_RC=$?
+            if [ -s "$TMP_VERIFICATION" ]; then
+              mv "$TMP_VERIFICATION" route-verification.json
+            else
+              printf '%s\n' '{"status":"Failed","diagnostics":[{"code":"EMPTY_VERIFICATION","message":"Verification produced no result"}]}' > route-verification.json
+            fi
+            jq --arg stage "Verify" --arg file "route-verification.json" \
+              '.stage = $stage | .verificationResultFile = $file' \
+              publication-result.json > publication-result.tmp
+            mv publication-result.tmp publication-result.json
+            if [ "$VERIFY_RC" -eq 0 ] && jq -e '.status == "Succeeded"' route-verification.json >/dev/null 2>&1; then
+              VERIFIED=true
+              break
+            fi
+            VERIFY_STATUS="$(jq -r '.status // "Invalid"' route-verification.json 2>/dev/null || printf '%s' "Invalid")"
+            if [ "$VERIFY_STATUS" = "Failed" ] || [ "$ATTEMPT" -eq "$MAX_ATTEMPTS" ]; then
+              break
+            fi
+            case "$ATTEMPT" in
+              1) sleep 5 ;;
+              2) sleep 10 ;;
+              3) sleep 20 ;;
+              *) sleep 30 ;;
+            esac
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+          if [ "$VERIFIED" != "true" ]; then
+            VERIFY_STATUS="$(jq -r '.status // "Invalid"' route-verification.json 2>/dev/null || printf '%s' "Invalid")"
+            jq --arg attempts "$ATTEMPT" --arg verifyStatus "$VERIFY_STATUS" \
+              '.status = "Failed" | .diagnostics = [{code:"VERIFICATION_FAILED",message:("Verification returned " + $verifyStatus + " and did not return Succeeded within the bounded retry window (attempt " + $attempts + ")")}]' \
+              publication-result.json > publication-result.tmp
+            mv publication-result.tmp publication-result.json
+            exit 1
+          fi
+
+      - name: Report Published Route
+        id: publish_result
+        run: |
+          ENDPOINT_URL=$(jq -r '.route.url // empty' route-registration.json 2>/dev/null || true)
+          if [ -z "$ENDPOINT_URL" ]; then
+            jq '.stage = "Complete" | .status = "Failed" |
+              .diagnostics = [{code:"MISSING_ENDPOINT_URL",message:"Failed to extract published endpoint URL from route registration result"}]' \
+              publication-result.json > publication-result.tmp
+            mv publication-result.tmp publication-result.json
+            echo "❌ Error: Could not extract endpoint URL from route registration result"
+            exit 1
+          fi
+          jq --arg url "$ENDPOINT_URL" \
+            '.stage = "Complete" | .status = "Succeeded" | .publishedUrl = $url |
+             .diagnostics = [{code:"PUBLICATION_SUCCEEDED",message:"Front Door route verified successfully"}]' \
+            publication-result.json > publication-result.tmp
+          mv publication-result.tmp publication-result.json
+          echo "publishedUrl=$ENDPOINT_URL" >> "$GITHUB_OUTPUT"
+          echo "Published Front Door URL: $ENDPOINT_URL" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Retain Route Registration Artifact
         if: always()
@@ -372,6 +597,7 @@ jobs:
           name: route-registration-${{ needs.deploy_infrastructure.outputs.instanceId }}
           if-no-files-found: warn
           path: |
+            publication-result.json
             route-registration.json
             route-verification.json
             route-forwarding-gateway.json
