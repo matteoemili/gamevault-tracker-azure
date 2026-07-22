@@ -29,7 +29,7 @@ on:
 
 # Environment variables for infrastructure deployment
 env:
-  AZURE_LOCATION: uksouth
+  AZURE_LOCATION: westeurope
   BICEP_FILE: infra/main.bicep
 
 jobs:
