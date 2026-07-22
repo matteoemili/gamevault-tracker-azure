@@ -9,7 +9,11 @@
         "build": "tsc -b --noCheck && vite build",
         "lint": "eslint .",
         "optimize": "vite optimize",
-        "preview": "vite preview"
+        "preview": "vite preview",
+        "infra:platform:build": "az bicep build --file infra/platform/main.bicep --stdout > /dev/null",
+        "infra:platform:validate": "./scripts/platform.sh validate --environment dev --local-only",
+        "infra:platform:test": "bash tests/infrastructure/contracts/offline-validation.sh",
+        "infra:platform:shellcheck": "shellcheck scripts/*.sh scripts/lib/*.sh tests/infrastructure/**/*.sh"
     },
     "dependencies": {
         "@github/spark": "^0.39.0",
