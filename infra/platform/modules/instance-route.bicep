@@ -41,6 +41,15 @@ param enableMaintenanceFallback bool = false
 @description('Whether the route is enabled. Kept as a parameter so a route can be provisioned but held disabled until verified')
 param routeEnabled bool = true
 
+@description('Resource ID of the centrally managed Front Door WAF policy')
+param wafPolicyId string = ''
+
+@description('Name of the shared Front Door security policy that associates the WAF with managed endpoints')
+param wafSecurityPolicyName string = ''
+
+@description('Resource IDs of all managed Front Door endpoints protected by the shared WAF policy')
+param wafAssociatedEndpointIds array = []
+
 @description('Tags to apply to the per-instance Front Door child resources')
 param tags object = {}
 
@@ -146,6 +155,31 @@ resource route 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-09-01' = {
   dependsOn: [
     origin
   ]
+}
+
+resource wafAssociation 'Microsoft.Cdn/profiles/securityPolicies@2024-09-01' = if (!empty(wafPolicyId) && !empty(wafSecurityPolicyName)) {
+  parent: frontDoorProfile
+  name: wafSecurityPolicyName
+  properties: {
+    parameters: {
+      type: 'WebApplicationFirewall'
+      wafPolicy: {
+        id: wafPolicyId
+      }
+      associations: [
+        {
+          domains: [
+            for endpointId in wafAssociatedEndpointIds: {
+              id: endpointId
+            }
+          ]
+          patternsToMatch: [
+            '/*'
+          ]
+        }
+      ]
+    }
+  }
 }
 
 // ----------------------------------------------------------------------------

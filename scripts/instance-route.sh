@@ -22,8 +22,8 @@
 #
 # `register` validates the instance origin, runs Azure validation and what-if,
 # then deploys only that instance's deterministic Front Door resource graph.
-# `verify` performs read-only association and endpoint checks. Guarded
-# deregistration is deferred to User Story 3 (T052).
+# `verify` performs read-only association and endpoint checks. `unregister`
+# validates ownership tags before deleting only the matching route graph.
 #
 # Bash 3.2 compatible. Writes human-readable progress to stderr and exactly
 # one JSON document (matching
@@ -247,6 +247,43 @@ write_forwarding_gateway_config() {
   log_success "forwarding-gateway config written to $output_file"
 }
 
+remove_endpoint_from_waf_association() {
+  endpoint_id="$1"
+  security_policies_json=$(az afd security-policy list \
+    --resource-group "$PLATFORM_RESOURCE_GROUP" \
+    --profile-name "$FRONT_DOOR_PROFILE" \
+    --subscription "$SUBSCRIPTION_ID" -o json 2>/dev/null) || return 1
+
+  while IFS= read -r security_policy_name; do
+    [ -n "$security_policy_name" ] || continue
+    security_policy_json=$(az afd security-policy show \
+      --resource-group "$PLATFORM_RESOURCE_GROUP" \
+      --profile-name "$FRONT_DOOR_PROFILE" \
+      --security-policy-name "$security_policy_name" \
+      --subscription "$SUBSCRIPTION_ID" -o json 2>/dev/null) || return 1
+    remaining_domains=$(echo "$security_policy_json" | jq -c --arg endpointId "$endpoint_id" '[.parameters.associations[].domains[].id | select(ascii_downcase != ($endpointId | ascii_downcase))] | unique')
+    waf_policy_id=$(echo "$security_policy_json" | jq -r '.parameters.wafPolicy.id // empty')
+
+    if [ "$(echo "$remaining_domains" | jq 'length')" -eq 0 ]; then
+      az afd security-policy delete \
+        --resource-group "$PLATFORM_RESOURCE_GROUP" \
+        --profile-name "$FRONT_DOOR_PROFILE" \
+        --security-policy-name "$security_policy_name" \
+        --subscription "$SUBSCRIPTION_ID" --yes >/dev/null || return 1
+    else
+      az afd security-policy update \
+        --resource-group "$PLATFORM_RESOURCE_GROUP" \
+        --profile-name "$FRONT_DOOR_PROFILE" \
+        --security-policy-name "$security_policy_name" \
+        --subscription "$SUBSCRIPTION_ID" \
+        --waf-policy "$waf_policy_id" \
+        --domains "$remaining_domains" >/dev/null || return 1
+    fi
+  done <<EOF
+$(echo "$security_policies_json" | jq -r --arg endpointId "$endpoint_id" '.[] | select(any(.parameters.associations[]?.domains[]?.id; ascii_downcase == ($endpointId | ascii_downcase))) | .name')
+EOF
+}
+
 cmd_register() {
   [ -n "$ENVIRONMENT" ] || fail_route "$ACTION" "$OP_ID" "MISSING_REQUIRED_OPTION" "missing value for required option: --environment"
   case "$ENVIRONMENT" in
@@ -317,6 +354,18 @@ cmd_register() {
     fail_route "$ACTION" "$OP_ID" "ENDPOINT_CAPACITY_EXCEEDED" "Front Door profile already has $endpoint_count endpoints (limit: 25)"
   fi
 
+  endpoint_id="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${PLATFORM_RESOURCE_GROUP}/providers/Microsoft.Cdn/profiles/${FRONT_DOOR_PROFILE}/afdEndpoints/${endpoint_name}"
+  waf_associated_endpoint_ids=$(echo "$endpoints_json" | jq -c --arg endpointId "$endpoint_id" '[.[] | select((.tags.instanceId // "") != "") | .id] + [$endpointId] | map(ascii_downcase) | unique')
+  waf_policy_id="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${PLATFORM_RESOURCE_GROUP}/providers/Microsoft.Network/frontdoorWebApplicationFirewallPolicies/$(echo "$FRONT_DOOR_PROFILE" | tr -d '-')"
+  security_policies_json=$(az afd security-policy list \
+    --resource-group "$PLATFORM_RESOURCE_GROUP" \
+    --profile-name "$FRONT_DOOR_PROFILE" \
+    --subscription "$SUBSCRIPTION_ID" -o json 2>/dev/null) || security_policies_json='[]'
+  waf_security_policy_name=$(echo "$security_policies_json" | jq -r --arg wafPolicyId "$waf_policy_id" '[.[] | select((.parameters.wafPolicy.id // "" | ascii_downcase) == ($wafPolicyId | ascii_downcase))][0].name // empty')
+  if [ -z "$waf_security_policy_name" ]; then
+    waf_security_policy_name="waf-${INSTANCE_ID}"
+  fi
+
   tags_json=$(jq -n \
     --arg application 'GameVault Tracker' \
     --arg environment "$ENVIRONMENT" \
@@ -334,6 +383,8 @@ cmd_register() {
     "instanceSubscriptionId=$SUBSCRIPTION_ID"
     "staticWebAppName=$STATIC_WEB_APP_NAME"
     "originHostNameOverride=$ORIGIN_HOSTNAME"
+    "wafSecurityPolicyName=$waf_security_policy_name"
+    "wafAssociatedEndpointIds=$waf_associated_endpoint_ids"
     "tags=$tags_json"
   )
 
@@ -443,7 +494,88 @@ cmd_verify() {
   fi
 }
 
-NOT_IMPLEMENTED_MESSAGE="Guarded deregistration is delivered by User Story 3 (T052). Use the direct Bicep deployment harness documented in tests/infrastructure/integration/README.md until then."
+cmd_unregister() {
+  if [ "$CONFIRM" -ne 1 ]; then
+    fail_route "$ACTION" "$OP_ID" "CONFIRMATION_REQUIRED" "unregister requires --confirm"
+  fi
+
+  require_azure_login
+  require_subscription "$SUBSCRIPTION_ID"
+
+  endpoint_json=$(endpoint_for_instance)
+  if [ -z "$endpoint_json" ] || [ "$endpoint_json" = "null" ]; then
+    emit_envelope "$ACTION" "NoChange" "$OP_ID" "null" "null"
+    return 0
+  fi
+
+  endpoint_name=$(echo "$endpoint_json" | jq -r '.name // empty')
+  tagged_instance=$(echo "$endpoint_json" | jq -r '.tags.instanceId // empty')
+  tagged_resource_group=$(echo "$endpoint_json" | jq -r '.tags.instanceResourceGroup // empty')
+  tagged_static_web_app=$(echo "$endpoint_json" | jq -r '.tags.staticWebAppName // empty')
+  case "$endpoint_name" in *-"$INSTANCE_ID") ;; *) fail_route "$ACTION" "$OP_ID" "ENDPOINT_NAME_MISMATCH" "Endpoint '$endpoint_name' is not deterministic for instance '$INSTANCE_ID'" ;; esac
+  [ "$tagged_instance" = "$INSTANCE_ID" ] || fail_route "$ACTION" "$OP_ID" "OWNERSHIP_TAG_MISMATCH" "Endpoint ownership tag does not match the requested instance"
+  [ "$tagged_resource_group" = "$INSTANCE_RESOURCE_GROUP" ] || fail_route "$ACTION" "$OP_ID" "OWNERSHIP_TAG_MISMATCH" "Endpoint resource-group ownership tag does not match the requested instance"
+  [ "$tagged_static_web_app" = "$STATIC_WEB_APP_NAME" ] || fail_route "$ACTION" "$OP_ID" "OWNERSHIP_TAG_MISMATCH" "Endpoint Static Web App ownership tag does not match the requested instance"
+
+  origin_json=$(az afd origin show \
+    --resource-group "$PLATFORM_RESOURCE_GROUP" \
+    --profile-name "$FRONT_DOOR_PROFILE" \
+    --origin-group-name "og-${INSTANCE_ID}" \
+    --origin-name "origin-${INSTANCE_ID}" \
+    --subscription "$SUBSCRIPTION_ID" -o json 2>/dev/null) || origin_json='{}'
+  ORIGIN_HOSTNAME=$(echo "$origin_json" | jq -r '.originHostHeader // "retired.azurestaticapps.net"')
+  instance_json=$(instance_object)
+  route_json=$(route_object_from_azure "$endpoint_json") || route_json='null'
+
+  if ! remove_endpoint_from_waf_association "$(echo "$endpoint_json" | jq -r '.id')"; then
+    fail_route "$ACTION" "$OP_ID" "WAF_ASSOCIATION_UPDATE_FAILED" "Could not remove the endpoint from its WAF association; route teardown was not started"
+  fi
+
+  log_info "removing route graph for instance '$INSTANCE_ID'"
+  az afd route delete \
+    --resource-group "$PLATFORM_RESOURCE_GROUP" \
+    --profile-name "$FRONT_DOOR_PROFILE" \
+    --endpoint-name "$endpoint_name" \
+    --route-name "route-${INSTANCE_ID}" \
+    --subscription "$SUBSCRIPTION_ID" --yes >/dev/null 2>&1 || true
+
+  origins_json=$(az afd origin list \
+    --resource-group "$PLATFORM_RESOURCE_GROUP" \
+    --profile-name "$FRONT_DOOR_PROFILE" \
+    --origin-group-name "og-${INSTANCE_ID}" \
+    --subscription "$SUBSCRIPTION_ID" -o json 2>/dev/null) || origins_json='[]'
+  while IFS= read -r origin_name; do
+    [ -n "$origin_name" ] || continue
+    az afd origin delete \
+      --resource-group "$PLATFORM_RESOURCE_GROUP" \
+      --profile-name "$FRONT_DOOR_PROFILE" \
+      --origin-group-name "og-${INSTANCE_ID}" \
+      --origin-name "$origin_name" \
+      --subscription "$SUBSCRIPTION_ID" --yes >/dev/null
+  done <<EOF
+$(echo "$origins_json" | jq -r '.[].name // empty')
+EOF
+
+  az afd origin-group delete \
+    --resource-group "$PLATFORM_RESOURCE_GROUP" \
+    --profile-name "$FRONT_DOOR_PROFILE" \
+    --origin-group-name "og-${INSTANCE_ID}" \
+    --subscription "$SUBSCRIPTION_ID" --yes >/dev/null 2>&1 || true
+  if ! az afd endpoint delete \
+    --resource-group "$PLATFORM_RESOURCE_GROUP" \
+    --profile-name "$FRONT_DOOR_PROFILE" \
+    --endpoint-name "$endpoint_name" \
+    --subscription "$SUBSCRIPTION_ID" --yes >/dev/null 2>"$SCRATCH_DIR/unregister.err"; then
+    unregister_error=$(mask_secrets < "$SCRATCH_DIR/unregister.err")
+    fail_route "$ACTION" "$OP_ID" "AZURE_DELETE_FAILED" "Route graph deletion did not complete: $unregister_error"
+  fi
+
+  remaining_endpoint=$(endpoint_for_instance)
+  if [ -n "$remaining_endpoint" ] && [ "$remaining_endpoint" != "null" ]; then
+    fail_route "$ACTION" "$OP_ID" "ROUTE_DELETE_INCOMPLETE" "Endpoint still exists after the route graph deletion"
+  fi
+  emit_envelope "$ACTION" "Succeeded" "$OP_ID" "$instance_json" "$route_json"
+}
 
 cmd_status() {
   require_azure_login
@@ -513,12 +645,36 @@ cmd_status() {
       provisioningState: (.provisioningState // "Succeeded")
     }')
 
-  emit_envelope "$ACTION" "Succeeded" "$OP_ID" "$instance_json" "$route_obj"
+  diagnostics='[]'
+  endpoint_count=$(az afd endpoint list \
+    --resource-group "$PLATFORM_RESOURCE_GROUP" \
+    --profile-name "$FRONT_DOOR_PROFILE" \
+    --subscription "$SUBSCRIPTION_ID" --query 'length(@)' -o tsv 2>/dev/null)
+  diagnostics=$(echo "$diagnostics" | jq --arg count "${endpoint_count:-unknown}" '. + [{code: "CAPACITY_STATUS", message: ("Front Door endpoint capacity: " + $count + "/25")}]')
+
+  endpoint_hostname=$(echo "$route_obj" | jq -r '.endpointHostName')
+  health_status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "https://${endpoint_hostname}/" 2>/dev/null)
+  case "$health_status" in
+    2*|3*) diagnostics=$(echo "$diagnostics" | jq --arg status "$health_status" '. + [{code: "HEALTHY", message: ("Endpoint responded with HTTP " + $status)}]') ;;
+    *) diagnostics=$(echo "$diagnostics" | jq --arg status "${health_status:-<none>}" '. + [{code: "ENDPOINT_UNHEALTHY", message: ("Endpoint response is " + $status)}]') ;;
+  esac
+
+  if ! az staticwebapp show --name "$STATIC_WEB_APP_NAME" --resource-group "$INSTANCE_RESOURCE_GROUP" --subscription "$SUBSCRIPTION_ID" >/dev/null 2>&1; then
+    diagnostics=$(echo "$diagnostics" | jq '. + [{code: "ORPHANED_ROUTE", message: "Tagged Static Web App no longer exists; run unregister after confirming retirement"}]')
+  fi
+
+  lifecycle_name=$(az deployment group list \
+    --resource-group "$PLATFORM_RESOURCE_GROUP" \
+    --subscription "$SUBSCRIPTION_ID" \
+    --query "sort_by([?starts_with(name, 'instance-route-${INSTANCE_ID}')], &properties.timestamp)[-1].name" -o tsv 2>/dev/null)
+  [ -n "$lifecycle_name" ] && [ "$lifecycle_name" != "None" ] && diagnostics=$(echo "$diagnostics" | jq --arg name "$lifecycle_name" '. + [{code: "LAST_LIFECYCLE_OPERATION", message: ("Latest route deployment: " + $name)}]')
+
+  emit_envelope "$ACTION" "Succeeded" "$OP_ID" "$instance_json" "$route_obj" "$diagnostics"
 }
 
 case "$ACTION" in
   status) cmd_status ;;
   register) cmd_register ;;
   verify) cmd_verify ;;
-  unregister) fail_route "$ACTION" "$OP_ID" "NOT_IMPLEMENTED" "$NOT_IMPLEMENTED_MESSAGE" ;;
+  unregister) cmd_unregister ;;
 esac

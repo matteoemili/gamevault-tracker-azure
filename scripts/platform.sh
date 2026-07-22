@@ -153,7 +153,9 @@ platform_object_from_outputs() {
       frontDoorId: (.frontDoorId.value // ""),
       endpointCapacity: (.endpointCapacity.value // 25),
       registeredEndpointCount: $registeredEndpointCount,
-      wafMode: (.wafMode.value // "Detection")
+      wafMode: (.wafMode.value // "Detection"),
+      workspaceId: (.workspaceId.value // ""),
+      workspaceName: (.workspaceName.value // "")
     }'
 }
 
@@ -349,7 +351,7 @@ cmd_status() {
   fi
 
   profile_name="$(front_door_profile_name)"
-  if ! az profile show --resource-group "$RESOURCE_GROUP" --profile-name "$profile_name" --subscription "$SUBSCRIPTION_ID" >/dev/null 2>&1; then
+  if ! az afd profile show --resource-group "$RESOURCE_GROUP" --profile-name "$profile_name" --subscription "$SUBSCRIPTION_ID" >/dev/null 2>&1; then
     fail_fast "$DATA_KEY" "$ACTION" "$OP_ID" "PROFILE_NOT_FOUND" "Front Door profile '$profile_name' does not exist; run 'deploy' first"
   fi
 

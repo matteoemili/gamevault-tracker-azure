@@ -348,3 +348,26 @@ az staticwebapp show \
 **Platform**: Azure Static Web Apps  
 **Framework**: Vite + React  
 **Multi-Instance Support**: ✅ Enabled
+
+## Shared Entry Platform Operations
+
+Deploy the shared platform before registering an instance route. The lifecycle
+has explicit rollback boundaries: `validate` and `what-if` do not mutate Azure,
+an unsuccessful registration preserves the active route, and `unregister`
+touches only an endpoint with matching ownership tags.
+
+```bash
+./scripts/platform.sh validate --environment prod --subscription-id "$AZURE_SUBSCRIPTION_ID" --resource-group "$PLATFORM_RG" --location "$LOCATION" | jq .
+./scripts/platform.sh what-if --environment prod --subscription-id "$AZURE_SUBSCRIPTION_ID" --resource-group "$PLATFORM_RG" | jq .
+./scripts/platform.sh deploy --environment prod --subscription-id "$AZURE_SUBSCRIPTION_ID" --resource-group "$PLATFORM_RG" --location "$LOCATION" --confirm | jq .
+```
+
+Expected platform outputs include `frontDoorProfileId`, `frontDoorId`,
+`workspaceId`, `wafPolicyId`, `endpointCapacity`, and `budgetId`. Register and
+verify each instance with `scripts/instance-route.sh`; route commands emit one
+redacted JSON result to stdout and write diagnostics to stderr.
+
+For a failed route deployment, rerun the same `register` command after fixing
+the reported preflight issue. For a retired instance, first run `status`, then
+run `unregister --confirm`, and finally confirm the sibling URLs remain healthy.
+Use [specs/001-multi-instance-platform/quickstart.md](specs/001-multi-instance-platform/quickstart.md) for the complete commands and [docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) for topology and service limits.

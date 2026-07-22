@@ -53,6 +53,15 @@ param monthlyBudgetAmount int = 0
 @description('Reserved for T047 (monitor alerting). Email addresses notified on platform alerts')
 param alertRecipientEmails array = []
 
+@description('Object ID of the platform operator group or user. Empty leaves no operator assignment.')
+param operatorPrincipalId string = ''
+
+@description('Object ID used by shared-platform deployment automation. Empty leaves no assignment.')
+param platformDeploymentPrincipalId string = ''
+
+@description('Object ID used by instance-route deployment automation. Empty leaves no assignment.')
+param instanceRoutePrincipalId string = ''
+
 // ----------------------------------------------------------------------------
 // Variables
 // ----------------------------------------------------------------------------
@@ -80,6 +89,7 @@ module frontDoor 'modules/front-door.bicep' = {
   params: {
     profileName: frontDoorProfileName
     tags: baseTags
+    wafMode: wafMode
   }
 }
 
@@ -97,9 +107,35 @@ module maintenanceOrigin 'modules/maintenance-origin.bicep' = {
   }
 }
 
-// Future modules (US3, T046-T051): Log Analytics workspace, diagnostic
-// settings, WAF policy + security policy association, budget, and RBAC role
-// assignments. Not composed here yet.
+module monitoring 'modules/monitoring.bicep' = {
+  name: 'platform-monitoring'
+  params: {
+    location: location
+    frontDoorProfileName: frontDoorProfileName
+    tags: baseTags
+    alertRecipientEmails: alertRecipientEmails
+  }
+}
+
+module rbac 'modules/rbac.bicep' = {
+  name: 'platform-rbac'
+  params: {
+    operatorPrincipalId: operatorPrincipalId
+    platformDeploymentPrincipalId: platformDeploymentPrincipalId
+    instanceRoutePrincipalId: instanceRoutePrincipalId
+  }
+}
+
+module costManagement 'modules/cost-management.bicep' = {
+  name: 'platform-cost-management'
+  scope: subscription()
+  params: {
+    platformResourceGroupName: resourceGroup().name
+    monthlyBudgetAmount: monthlyBudgetAmount
+    alertRecipientEmails: alertRecipientEmails
+    tags: baseTags
+  }
+}
 
 // ----------------------------------------------------------------------------
 // Outputs
@@ -117,6 +153,9 @@ output frontDoorProfileId string = frontDoor.outputs.id
 @description('The unique Front Door ID (expected value of the X-Azure-FDID origin header for origin hardening)')
 output frontDoorId string = frontDoor.outputs.frontDoorId
 
+@description('The centrally managed Front Door WAF policy ID')
+output wafPolicyId string = frontDoor.outputs.wafPolicyId
+
 @description('Maximum number of instance endpoints supported by the Premium_AzureFrontDoor SKU')
 output endpointCapacity int = frontDoor.outputs.endpointCapacity
 
@@ -128,6 +167,18 @@ output maintenancePageUrl string = maintenanceOrigin.outputs.maintenancePageUrl
 
 @description('The configured WAF policy mode (Detection or Prevention)')
 output wafMode string = wafMode
+
+@description('The shared Log Analytics workspace ID retaining platform diagnostics')
+output workspaceId string = monitoring.outputs.workspaceId
+
+@description('The shared Log Analytics workspace name')
+output workspaceName string = monitoring.outputs.workspaceName
+
+@description('The action group receiving shared platform alerts')
+output alertActionGroupId string = monitoring.outputs.actionGroupId
+
+@description('The budget resource ID when monthlyBudgetAmount is nonzero')
+output budgetId string = costManagement.outputs.budgetId
 
 @description('Reserved for T049: the configured monthly budget amount (0 = disabled)')
 output reservedMonthlyBudgetAmount int = monthlyBudgetAmount

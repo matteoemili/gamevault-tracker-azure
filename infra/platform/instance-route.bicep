@@ -61,6 +61,12 @@ param enableMaintenanceFallback bool = false
 @description('Whether the route is enabled')
 param routeEnabled bool = true
 
+@description('Name of the shared Front Door security policy that associates the WAF with managed endpoints')
+param wafSecurityPolicyName string = ''
+
+@description('Resource IDs of all managed Front Door endpoints protected by the shared WAF policy')
+param wafAssociatedEndpointIds array = []
+
 @description('Tags to apply to the per-instance Front Door child resources')
 param tags object = {}
 
@@ -74,6 +80,7 @@ resource instanceStaticWebApp 'Microsoft.Web/staticSites@2024-11-01' existing = 
 }
 
 var resolvedOriginHostName = empty(originHostNameOverride) ? instanceStaticWebApp.properties.defaultHostname : originHostNameOverride
+var wafPolicyName = replace(frontDoorProfileName, '-', '')
 
 // ----------------------------------------------------------------------------
 // Deploy the instance route against the existing shared Front Door profile
@@ -90,6 +97,9 @@ module route 'modules/instance-route.bicep' = {
     maintenanceOriginHostName: maintenanceOriginHostName
     enableMaintenanceFallback: enableMaintenanceFallback
     routeEnabled: routeEnabled
+    wafPolicyId: resourceId('Microsoft.Network/frontdoorWebApplicationFirewallPolicies', wafPolicyName)
+    wafSecurityPolicyName: wafSecurityPolicyName
+    wafAssociatedEndpointIds: wafAssociatedEndpointIds
     tags: tags
   }
 }

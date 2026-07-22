@@ -17,6 +17,30 @@ This document provides comprehensive documentation for the Infrastructure as Cod
 
 ## Architecture Overview
 
+## Shared Multi-Instance Entry Platform
+
+The shared platform lives in its own resource group and contains one Azure
+Front Door Premium profile, a central WAF policy, Log Analytics diagnostics,
+alerts, and a tagged cost budget. Each instance remains in its own resource
+group with its own Static Web App and Table Storage account. A route lifecycle
+operation creates one Azure-provided `azurefd.net` endpoint, one route, one
+origin group, and one application origin for that instance only.
+
+There is no owned domain in this design. The published address is the generated
+Front Door endpoint hostname; Front Door provides the certificate and redirects
+HTTP to HTTPS. A route can use only its matching origin group, so an unhealthy
+instance cannot fail over to another instance.
+
+The security boundary is centralized WAF enforcement plus endpoint-scoped
+associations, while management is limited by resource-group role assignments.
+Operational logs remain in the shared workspace for at least 90 days. Front
+Door Premium supports 25 endpoints per profile in this release; create a new
+profile and shard new instance IDs when the capacity check reports 25/25.
+
+Use `scripts/instance-route.sh status` to inspect a route’s HTTP health,
+capacity, last lifecycle deployment, and orphaned-instance indication. Use
+`unregister --confirm` before deleting a retired instance resource group.
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                           Azure Resource Group                          │

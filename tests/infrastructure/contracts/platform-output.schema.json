@@ -45,7 +45,9 @@
             "frontDoorId": { "type": "string", "minLength": 1 },
             "endpointCapacity": { "type": "integer", "minimum": 1, "maximum": 25 },
             "registeredEndpointCount": { "type": "integer", "minimum": 0, "maximum": 25 },
-            "wafMode": { "type": "string", "enum": ["Detection", "Prevention"] }
+            "wafMode": { "type": "string", "enum": ["Detection", "Prevention"] },
+            "workspaceId": { "type": "string", "minLength": 1 },
+            "workspaceName": { "type": "string", "minLength": 1 }
           }
         }
       ]

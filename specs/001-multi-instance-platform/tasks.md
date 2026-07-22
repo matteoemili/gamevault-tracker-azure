@@ -114,23 +114,23 @@
 
 ### Tests for User Story 3
 
-- [ ] T041 [P] [US3] Add assertions for Front Door access, health-probe, WAF, and activity records with at least 90-day workspace retention in tests/infrastructure/integration/observability.sh
-- [ ] T042 [P] [US3] Add a sustained origin-failure test that asserts the alert identifies the instance and fires within five minutes in tests/infrastructure/integration/health-alert.sh
-- [ ] T043 [P] [US3] Add an unauthorized-principal test that expects route mutation denial and locates the denied operation in activity records in tests/infrastructure/integration/authorization-audit.sh
-- [ ] T044 [P] [US3] Add deregistration and repeated-deregistration tests that snapshot all sibling route resource IDs before and after removal in tests/infrastructure/integration/deregistration-isolation.sh
-- [ ] T045 [P] [US3] Add orphan detection for endpoint resources whose tagged instance resource group or Static Web App no longer exists in tests/infrastructure/integration/orphan-detection.sh
+- [x] T041 [P] [US3] Add assertions for Front Door access, health-probe, WAF, and activity records with at least 90-day workspace retention in tests/infrastructure/integration/observability.sh
+- [x] T042 [P] [US3] Add a sustained origin-failure test that asserts the alert identifies the instance and fires within five minutes in tests/infrastructure/integration/health-alert.sh
+- [x] T043 [P] [US3] Add an unauthorized-principal test that expects route mutation denial and locates the denied operation in activity records in tests/infrastructure/integration/authorization-audit.sh
+- [x] T044 [P] [US3] Add deregistration and repeated-deregistration tests that snapshot all sibling route resource IDs before and after removal in tests/infrastructure/integration/deregistration-isolation.sh
+- [x] T045 [P] [US3] Add orphan detection for endpoint resources whose tagged instance resource group or Static Web App no longer exists in tests/infrastructure/integration/orphan-detection.sh
 
 ### Implementation for User Story 3
 
-- [ ] T046 [P] [US3] Provision a 90-day Log Analytics workspace and Front Door access, health-probe, and WAF diagnostic settings in infra/platform/modules/monitoring.bicep
-- [ ] T047 [US3] Provision action groups plus shared-entry, repeated-origin-health, certificate, deployment-failure, and endpoint-capacity alerts with instance-identifying dimensions in infra/platform/modules/monitoring.bicep
-- [ ] T048 [P] [US3] Provision least-privilege operator, shared-platform deployment, and instance-route deployment role assignments from principal IDs in infra/platform/modules/rbac.bicep
-- [ ] T049 [P] [US3] Provision environment budget alerts and tag-based application cost attribution using configurable thresholds in infra/platform/modules/cost-management.bicep
-- [ ] T050 [US3] Provision a centrally associated Front Door WAF policy with managed rules and bot protection, parameterized for detection-to-prevention promotion in infra/platform/modules/front-door.bicep
-- [ ] T051 [US3] Compose monitoring, RBAC, cost management, and WAF outputs without introducing instance-resource-group dependencies in infra/platform/main.bicep
-- [ ] T052 [US3] Implement guarded deregistration that validates deterministic names and ownership tags, deletes only the matching endpoint graph, and returns `NoChange` when absent in scripts/instance-route.sh
-- [ ] T053 [US3] Implement orphan reporting, per-instance health status, last lifecycle operation, capacity status, and actionable diagnostics in scripts/instance-route.sh
-- [ ] T054 [US3] Document health investigation, WAF promotion, denied-operation audit, orphan cleanup, and safe retirement acceptance commands in specs/001-multi-instance-platform/quickstart.md
+- [x] T046 [P] [US3] Provision a 90-day Log Analytics workspace and Front Door access, health-probe, and WAF diagnostic settings in infra/platform/modules/monitoring.bicep
+- [x] T047 [US3] Provision action groups plus shared-entry, repeated-origin-health, certificate, deployment-failure, and endpoint-capacity alerts with instance-identifying dimensions in infra/platform/modules/monitoring.bicep
+- [x] T048 [P] [US3] Provision least-privilege operator, shared-platform deployment, and instance-route deployment role assignments from principal IDs in infra/platform/modules/rbac.bicep
+- [x] T049 [P] [US3] Provision environment budget alerts and tag-based application cost attribution using configurable thresholds in infra/platform/modules/cost-management.bicep
+- [x] T050 [US3] Provision a centrally associated Front Door WAF policy with managed rules and bot protection, parameterized for detection-to-prevention promotion in infra/platform/modules/front-door.bicep
+- [x] T051 [US3] Compose monitoring, RBAC, cost management, and WAF outputs without introducing instance-resource-group dependencies in infra/platform/main.bicep
+- [x] T052 [US3] Implement guarded deregistration that validates deterministic names and ownership tags, deletes only the matching endpoint graph, and returns `NoChange` when absent in scripts/instance-route.sh
+- [x] T053 [US3] Implement orphan reporting, per-instance health status, last lifecycle operation, capacity status, and actionable diagnostics in scripts/instance-route.sh
+- [x] T054 [US3] Document health investigation, WAF promotion, denied-operation audit, orphan cleanup, and safe retirement acceptance commands in specs/001-multi-instance-platform/quickstart.md
 
 **Checkpoint**: User Story 3 passes health, alerting, authorization, audit, orphan, and retirement tests while all unaffected routes remain available.
 
@@ -140,12 +140,12 @@
 
 **Purpose**: Prove the complete platform against the measurable outcomes and make the local-first workflow maintainable.
 
-- [ ] T055 [P] Add a single ordered runner for contract, deployment, routing, lifecycle, security, and observability checks in tests/infrastructure/run-all.sh
-- [ ] T056 [P] Add shell linting and Bicep build validation for every infrastructure and lifecycle script change in .github/workflows/validate-infrastructure.yml
-- [ ] T057 Add a 25-instance acceptance runner covering routing isolation, 20 idempotent reruns, controlled failures, and capacity rejection in tests/infrastructure/integration/platform-acceptance.sh
-- [ ] T058 Add operator-facing deployment stages, rollback boundaries, expected JSON outputs, and troubleshooting links in DEPLOYMENT.md
-- [ ] T059 Add the shared platform topology, no-domain URL model, security boundaries, service limits, and future profile-sharding trigger in docs/INFRASTRUCTURE.md
-- [ ] T060 Run every command in the implemented operator workflow and record verified prerequisites, durations, and expected outcomes in specs/001-multi-instance-platform/quickstart.md
+- [x] T055 [P] Add a single ordered runner for contract, deployment, routing, lifecycle, security, and observability checks in tests/infrastructure/run-all.sh
+- [x] T056 [P] Add shell linting and Bicep build validation for every infrastructure and lifecycle script change in .github/workflows/validate-infrastructure.yml
+- [x] T057 Add a 25-instance acceptance runner covering routing isolation, 20 idempotent reruns, controlled failures, and capacity rejection in tests/infrastructure/integration/platform-acceptance.sh
+- [x] T058 Add operator-facing deployment stages, rollback boundaries, expected JSON outputs, and troubleshooting links in DEPLOYMENT.md
+- [x] T059 Add the shared platform topology, no-domain URL model, security boundaries, service limits, and future profile-sharding trigger in docs/INFRASTRUCTURE.md
+- [x] T060 Run every command in the implemented operator workflow and record verified prerequisites, durations, and expected outcomes in specs/001-multi-instance-platform/quickstart.md
 
 **Checkpoint**: All feature outcomes have an executable check, documentation matches implemented commands, and CI invokes rather than duplicates local lifecycle logic.
 

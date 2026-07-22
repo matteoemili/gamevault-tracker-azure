@@ -24,6 +24,10 @@ param tags object = {}
 @minValue(16)
 param originResponseTimeoutSeconds int = 60
 
+@description('WAF rollout mode. Keep Detection until the shared WAF logs have been reviewed.')
+@allowed(['Detection', 'Prevention'])
+param wafMode string = 'Detection'
+
 // ----------------------------------------------------------------------------
 // Resources
 // ----------------------------------------------------------------------------
@@ -41,6 +45,34 @@ resource frontDoorProfile 'Microsoft.Cdn/profiles@2024-09-01' = {
   }
 }
 
+resource wafPolicy 'Microsoft.Network/frontdoorWebApplicationFirewallPolicies@2025-03-01' = {
+  // The Network provider rejects hyphenated WAF policy names with a misleading ARM ID error.
+  name: replace(profileName, '-', '')
+  location: 'global'
+  tags: tags
+  sku: {
+    name: 'Premium_AzureFrontDoor'
+  }
+  properties: {
+    policySettings: {
+      enabledState: 'Enabled'
+      mode: wafMode
+    }
+    managedRules: {
+      managedRuleSets: [
+        {
+          ruleSetType: 'Microsoft_DefaultRuleSet'
+          ruleSetVersion: '1.1'
+        }
+        {
+          ruleSetType: 'Microsoft_BotManagerRuleSet'
+          ruleSetVersion: '1.0'
+        }
+      ]
+    }
+  }
+}
+
 // ----------------------------------------------------------------------------
 // Outputs
 // ----------------------------------------------------------------------------
@@ -53,6 +85,12 @@ output id string = frontDoorProfile.id
 
 @description('The unique Front Door ID (used as the expected value of the X-Azure-FDID origin header for origin hardening)')
 output frontDoorId string = frontDoorProfile.properties.frontDoorId
+
+@description('ID of the centrally managed Front Door WAF policy')
+output wafPolicyId string = wafPolicy.id
+
+@description('Name of the centrally managed Front Door WAF policy')
+output wafPolicyName string = wafPolicy.name
 
 @description('Maximum number of endpoints supported per profile on the Premium_AzureFrontDoor SKU')
 output endpointCapacity int = 25

@@ -152,6 +152,44 @@ Apply the generated Front Door ID and endpoint hostname to each Static Web App f
 
 Expected: direct `azurestaticapps.net` requests are denied, Front Door requests succeed, access/WAF/health logs appear in the shared workspace, and a sustained synthetic origin failure raises an instance-specific alert within five minutes. Review WAF detections before promoting the policy to prevention mode.
 
+### Health and audit investigation
+
+```bash
+./scripts/instance-route.sh status \
+  --instance-id "$INSTANCE_A" \
+  --instance-resource-group "$INSTANCE_A_RG" \
+  --static-web-app-name "$INSTANCE_A_SWA" \
+  --platform-resource-group "$PLATFORM_RG" \
+  --front-door-profile "$PLATFORM_PROFILE" \
+  --subscription-id "$AZURE_SUBSCRIPTION_ID" | jq .
+
+export RUN_AZURE_INTEGRATION=1
+export PLATFORM_RESOURCE_GROUP="$PLATFORM_RG"
+export PLATFORM_SUBSCRIPTION_ID="$AZURE_SUBSCRIPTION_ID"
+export PLATFORM_FRONT_DOOR_PROFILE="$PLATFORM_PROFILE"
+export PLATFORM_FRONT_DOOR_PROFILE_ID=$(./scripts/platform.sh outputs --environment "$ENVIRONMENT" --subscription-id "$AZURE_SUBSCRIPTION_ID" --resource-group "$PLATFORM_RG" | jq -r '.platform.frontDoorProfileId')
+export PLATFORM_WORKSPACE_NAME=$(./scripts/platform.sh outputs --environment "$ENVIRONMENT" --subscription-id "$AZURE_SUBSCRIPTION_ID" --resource-group "$PLATFORM_RG" | jq -r '.platform.workspaceName')
+tests/infrastructure/integration/observability.sh
+tests/infrastructure/integration/health-alert.sh
+```
+
+The status result includes endpoint HTTP health, current endpoint capacity,
+the latest route deployment, and an orphan warning when the tagged Static Web
+App no longer exists. The shared health alert groups affected routes by the
+Front Door `Endpoint` dimension. Review WAF detections before changing
+`wafMode` from `Detection` to `Prevention` in the relevant platform parameter
+file and rerunning `platform.sh deploy`.
+
+Use a dedicated underprivileged test identity for the following audit check; it
+must not be an identity that can manage the shared platform:
+
+```bash
+tests/infrastructure/integration/authorization-audit.sh
+```
+
+The check expects a denied endpoint mutation and then locates the denied write
+in Azure Activity Log. Never use it with a privileged deployment identity.
+
 ## 7. Deregister Safely
 
 ```bash
@@ -166,6 +204,12 @@ Expected: direct `azurestaticapps.net` requests are denied, Front Door requests 
 ```
 
 Expected: only instance A's endpoint, route, origin group, and origin are removed. Instance B and the shared platform remain unchanged. Repeating unregister returns `NoChange`.
+
+Before retirement, run the isolation and orphan probes with a disposable
+instance fixture. `deregistration-isolation.sh` snapshots sibling endpoint IDs
+before deletion, and `orphan-detection.sh` reports routes whose tagged resource
+group or Static Web App no longer exists. Review an orphan with `status`, then
+use the same guarded `unregister --confirm` command to clean it up.
 
 ## 8. Promote to CI/CD
 
@@ -182,3 +226,23 @@ existing `AZURE_CREDENTIALS_SPONSORSHIP` GitHub secret for Azure login. Set the
 instance-scoped concurrency. A separate OpenID Connect identity split can be
 introduced later if the deployment workflow requires stricter privilege
 boundaries. Do not duplicate the lifecycle logic in workflow YAML.
+
+## 9. Verification Record
+
+Run the complete local-first validation sequence before requesting a shared
+platform deployment:
+
+```bash
+bash tests/infrastructure/run-all.sh
+```
+
+Verified on 2026-07-22: local Bicep builds, Bash syntax checks, output-schema
+self-tests, and platform/instance CLI contract tests completed successfully.
+The command takes less than a minute on a prepared macOS development machine.
+The Azure integration portion is deliberately skipped unless
+`RUN_AZURE_INTEGRATION=1` and its documented route variables are supplied; it
+must be run only against a disposable fixture because the acceptance suite can
+register and retire a route. Expected live outcomes are a stable endpoint across
+20 registrations, no sibling-route change after retirement, 90-day diagnostic
+retention, a five-minute endpoint-dimensioned origin-health alert, and a denied
+route mutation recorded in Activity Log.
