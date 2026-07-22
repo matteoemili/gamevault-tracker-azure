@@ -29,7 +29,7 @@ on:
 
 # Environment variables for infrastructure deployment
 env:
-  AZURE_LOCATION: westeurope
+  AZURE_LOCATION: uksouth
   BICEP_FILE: infra/main.bicep
 
 jobs:
@@ -331,6 +331,8 @@ jobs:
   # Serialized publication job
   # ============================================================================
   publish_front_door:
+    environment:
+      name: ${{ needs.deploy_infrastructure.outputs.environment }}
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     name: Publish Front Door Route
