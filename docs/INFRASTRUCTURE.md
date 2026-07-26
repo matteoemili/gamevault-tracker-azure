@@ -17,6 +17,30 @@ This document provides comprehensive documentation for the Infrastructure as Cod
 
 ## Architecture Overview
 
+## Shared Multi-Instance Entry Platform
+
+The shared platform lives in its own resource group and contains one Azure
+Front Door Premium profile, a central WAF policy, Log Analytics diagnostics,
+alerts, and a tagged cost budget. Each instance remains in its own resource
+group with its own Static Web App and Table Storage account. A route lifecycle
+operation creates one Azure-provided `azurefd.net` endpoint, one route, one
+origin group, and one application origin for that instance only.
+
+There is no owned domain in this design. The published address is the generated
+Front Door endpoint hostname; Front Door provides the certificate and redirects
+HTTP to HTTPS. A route can use only its matching origin group, so an unhealthy
+instance cannot fail over to another instance.
+
+The security boundary is centralized WAF enforcement plus endpoint-scoped
+associations, while management is limited by resource-group role assignments.
+Operational logs remain in the shared workspace for at least 90 days. Front
+Door Premium supports 25 endpoints per profile in this release; create a new
+profile and shard new instance IDs when the capacity check reports 25/25.
+
+Use `scripts/instance-route.sh status` to inspect a route’s HTTP health,
+capacity, last lifecycle deployment, and orphaned-instance indication. Use
+`unregister --confirm` before deleting a retired instance resource group.
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                           Azure Resource Group                          │
@@ -234,7 +258,7 @@ Removes all infrastructure by deleting the resource group.
 
 ### Workflow Overview
 
-The GitHub Actions workflow (`.github/workflows/azure-static-web-apps-ambitious-glacier-063139803.yml`) includes:
+The GitHub Actions workflow (`.github/workflows/ci-cd.yml`) includes:
 
 1. **Infrastructure Deployment Job** (`deploy_infrastructure`)
    - Triggered on push, pull request, or manual dispatch
@@ -248,6 +272,55 @@ The GitHub Actions workflow (`.github/workflows/azure-static-web-apps-ambitious-
 
 3. **Close Pull Request Job** (`close_pull_request_job`)
    - Cleans up preview environments when PRs are closed
+
+4. **Front Door Publication Job** (`publish_front_door`)
+   - Runs only after infrastructure and application upload succeed
+   - Registers the instance route, aligns published-origin CORS, verifies the
+     route, and reports the verified URL
+   - Serializes publication per environment/profile with
+     `cancel-in-progress: false`
+
+### Environment-specific Front Door configuration
+
+The publication job receives explicit, non-secret GitHub repository variables
+for each environment. Set all six variables before enabling publication:
+
+| Environment | Platform resource group variable | Front Door profile variable |
+|---|---|---|
+| `dev` | `GAMEVAULT_PLATFORM_RESOURCE_GROUP_DEV` | `GAMEVAULT_FRONT_DOOR_PROFILE_DEV` |
+| `staging` | `GAMEVAULT_PLATFORM_RESOURCE_GROUP_STAGING` | `GAMEVAULT_FRONT_DOOR_PROFILE_STAGING` |
+| `prod` | `GAMEVAULT_PLATFORM_RESOURCE_GROUP_PROD` | `GAMEVAULT_FRONT_DOOR_PROFILE_PROD` |
+
+The workflow selects the pair from `DEPLOYMENT_ENVIRONMENT`, validates that
+both values are present and that the platform and instance resource groups
+differ, then passes them to `instance-route.sh`. The configured profile name
+is authoritative; the platform Bicep naming convention is
+`gvt-afd-{environment}`. The subscription is read from the authenticated Azure
+context and is not duplicated in repository variables.
+
+### Publication ordering and verification
+
+Publication is an ordered phase, not a second infrastructure deployment:
+
+1. Create `publication-result.json` before preflight so configuration failures
+   have a retained result.
+2. Validate the subscription, instance outputs, origin hostname, and platform
+   mapping without mutating the route.
+3. Run `scripts/instance-route.sh register`, accepting `Succeeded`, `NoChange`,
+   or `Degraded` only when it returns an HTTPS route URL.
+4. Run `scripts/cors-add-origin.sh` for the published Front Door URL.
+5. Poll the read-only `verify` command with bounded backoff (five attempts;
+   5/10/20/30-second waits). Only verification status `Succeeded` is a
+   successful publication.
+6. Write the URL to the job summary/output and upload available sanitized
+   result files with `if: always()`.
+
+The artifact is named `route-registration-<instance-id>` and is created from
+the workflow workspace. It may contain `publication-result.json`,
+`route-registration.json`, `route-verification.json`, and
+`route-forwarding-gateway.json`. The last file is generated metadata only; it
+is not applied by this feature. No artifact may contain account keys, SAS
+values, credentials, bearer tokens, or unmasked secret-bearing command output.
 
 ### Manual Infrastructure Deployment
 
@@ -269,6 +342,22 @@ To manually trigger infrastructure deployment:
 | `AZURE_STATIC_WEB_APPS_API_TOKEN_AMBITIOUS_GLACIER_063139803` | Static Web App deployment token |
 | `VITE_AZURE_STORAGE_ACCOUNT_NAME` | Storage account name |
 | `VITE_AZURE_STORAGE_SAS_TOKEN` | SAS token for storage access |
+
+The current workflow uses `AZURE_CREDENTIALS_SPONSORSHIP` for `azure/login` in
+the infrastructure, application, and publication jobs. The documented current
+permission is subscription-level **Contributor** for the service principal.
+That broad role permits instance resource-group deployment and read access,
+Static Web App deployment/settings, storage key/SAS and Table CORS operations,
+and Front Door route management in the shared platform resource group. The
+route identity must be able to read the instance scope and mutate the matching
+platform route without changing sibling routes.
+
+The shared platform Bicep RBAC module can assign Contributor to separate
+platform-deployment and instance-route principals and Reader to an operator
+when their object-ID parameters are supplied. Those assignments are optional
+and disabled when parameters are empty. Migrating the workflow to federated
+OIDC and least-privilege custom roles is intentionally deferred; it is not part
+of automatic publication.
 
 ---
 
@@ -338,6 +427,17 @@ To add your production URL to CORS:
 - Storage Account uses public network access (required for browser-based app)
 - All traffic uses HTTPS (TLS 1.2 minimum)
 - SAS tokens provide authentication and authorization
+
+### Direct-origin hardening (deferred)
+
+The route registration command may retain
+`route-forwarding-gateway.json`, which contains the Front Door forwarding
+metadata needed for a future Static Web App restriction. This feature
+intentionally does **not** apply forwarding-gateway restrictions or disable
+direct Static Web App origins. Applying them would require another application
+deployment and changes rollback/recovery behavior. Treat direct-origin access
+as an intentional current state until a separately approved hardening rollout
+verifies every instance through Front Door.
 
 ---
 

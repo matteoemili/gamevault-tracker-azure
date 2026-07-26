@@ -348,3 +348,102 @@ az staticwebapp show \
 **Platform**: Azure Static Web Apps  
 **Framework**: Vite + React  
 **Multi-Instance Support**: ✅ Enabled
+
+## Shared Entry Platform Operations
+
+Deploy the shared platform before registering an instance route. The lifecycle
+has explicit rollback boundaries: `validate` and `what-if` do not mutate Azure,
+an unsuccessful registration preserves the active route, and `unregister`
+touches only an endpoint with matching ownership tags.
+
+```bash
+./scripts/platform.sh validate --environment prod --subscription-id "$AZURE_SUBSCRIPTION_ID" --resource-group "$PLATFORM_RG" --location "$LOCATION" | jq .
+./scripts/platform.sh what-if --environment prod --subscription-id "$AZURE_SUBSCRIPTION_ID" --resource-group "$PLATFORM_RG" | jq .
+./scripts/platform.sh deploy --environment prod --subscription-id "$AZURE_SUBSCRIPTION_ID" --resource-group "$PLATFORM_RG" --location "$LOCATION" --confirm | jq .
+```
+
+Expected platform outputs include `frontDoorProfileId`, `frontDoorId`,
+`workspaceId`, `wafPolicyId`, `endpointCapacity`, and `budgetId`. Register and
+verify each instance with `scripts/instance-route.sh`; route commands emit one
+redacted JSON result to stdout and write diagnostics to stderr.
+
+For a failed route deployment, rerun the same `register` command after fixing
+the reported preflight issue. For a retired instance, first run `status`, then
+run `unregister --confirm`, and finally confirm the sibling URLs remain healthy.
+Use [specs/001-multi-instance-platform/quickstart.md](specs/001-multi-instance-platform/quickstart.md) for the complete commands and [docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) for topology and service limits.
+
+## Automatic Front Door Publication
+
+The `publish_front_door` job in `.github/workflows/ci-cd.yml` publishes a
+successful instance without manual route changes. Configure these **repository
+variables** (values are environment-specific and must not contain secrets):
+
+| Environment | Platform resource group | Front Door profile |
+|---|---|---|
+| `dev` | `GAMEVAULT_PLATFORM_RESOURCE_GROUP_DEV` | `GAMEVAULT_FRONT_DOOR_PROFILE_DEV` |
+| `staging` | `GAMEVAULT_PLATFORM_RESOURCE_GROUP_STAGING` | `GAMEVAULT_FRONT_DOOR_PROFILE_STAGING` |
+| `prod` | `GAMEVAULT_PLATFORM_RESOURCE_GROUP_PROD` | `GAMEVAULT_FRONT_DOOR_PROFILE_PROD` |
+
+The workflow resolves and validates the selected pair before any route
+mutation. The values must identify the existing shared platform and must not
+equal the instance resource group. The profile is normally named
+`gvt-afd-{environment}`, but the configured value is authoritative; do not
+construct or discover it by convention.
+
+### Publication ordering
+
+For persistent push, pull-request, and manual-dispatch deployments, the
+publication phase runs only after both infrastructure and Static Web App
+upload succeed:
+
+1. Initialize and validate `publication-result.json`.
+2. Register/update the instance with `scripts/instance-route.sh register`.
+3. Add the verified route origin to Table Storage CORS with
+   `scripts/cors-add-origin.sh` (idempotently).
+4. Poll `scripts/instance-route.sh verify` with bounded backoff; only
+   `Succeeded` completes publication.
+5. Report the HTTPS Front Door URL and retain sanitized results.
+
+Registration is serialized per environment/profile with
+`cancel-in-progress: false` because shared WAF associations are
+read-modify-write. Infrastructure and application jobs for different
+instances remain independently concurrent. A failed publication does not
+roll back the deployed instance; it leaves the origin available for diagnosis
+and retry.
+
+### Verified URL and diagnostic artifacts
+
+On success, the verified URL is written to the GitHub Actions job summary as
+`Published Front Door URL` and exposed as the `publishedUrl` job output. The
+`if: always()` upload creates artifact `route-registration-<instance-id>` from
+the workflow workspace root:
+
+- `publication-result.json` — always initialized and retained;
+- `route-registration.json` — registration envelope, including valid CLI
+  failures;
+- `route-verification.json` — final verification attempt, when verification
+  ran;
+- `route-forwarding-gateway.json` — generated forwarding-gateway metadata,
+  when available.
+
+Artifacts contain sanitized identifiers, statuses, URLs, and diagnostics only.
+They must never contain SAS values, account keys, deployment credentials, or
+bearer tokens. The forwarding-gateway file is retained for a later hardening
+rollout; this workflow does not apply direct-origin restrictions.
+
+### Current deployment identity
+
+The workflow currently authenticates with the existing
+`AZURE_CREDENTIALS_SPONSORSHIP` service-principal credential. Existing
+deployment documentation grants that identity subscription-level **Contributor**
+access, which covers the current instance deployment, Static Web App upload and
+settings, storage key/SAS and CORS operations, and Front Door route lifecycle.
+The identity must also be able to read the instance scope and manage the shared
+platform scope. Platform Bicep can separately assign Contributor to the
+platform-deployment and instance-route principals, and Reader to the operator;
+empty principal parameters create no assignment.
+
+This is the current auditable arrangement, not a least-privilege target.
+Federated OIDC credentials and narrower custom roles are intentionally deferred
+to a separate hardening change. Do not place credential JSON or generated
+tokens in documentation or artifacts.

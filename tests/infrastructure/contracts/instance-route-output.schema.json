@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gamevault-tracker.local/schemas/instance-route-output.schema.json",
+  "title": "Instance Route Lifecycle CLI Output",
+  "description": "Non-secret result envelope emitted by scripts/instance-route.sh for register, verify, status, and unregister. Exactly one such document is written to stdout per invocation (see contracts/instance-route-cli.md).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "action", "status", "operationId", "instance", "route", "diagnostics"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "action": {
+      "type": "string",
+      "enum": ["register", "verify", "status", "unregister"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["Succeeded", "NoChange", "Degraded", "Failed"]
+    },
+    "operationId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Format: route-<instanceId>-<UTC timestamp>, e.g. route-abc12345-20260721T120000Z"
+    },
+    "instance": {
+      "description": "Null only when status is Failed and no instance state could be determined",
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["instanceId", "resourceGroupName", "staticWebAppName", "originHostName"],
+          "properties": {
+            "instanceId": { "type": "string", "pattern": "^[a-z0-9]{1,8}$" },
+            "resourceGroupName": { "type": "string", "minLength": 1 },
+            "staticWebAppName": { "type": "string", "minLength": 1 },
+            "originHostName": { "type": "string", "minLength": 1, "pattern": "\\.azurestaticapps\\.net$" }
+          }
+        }
+      ]
+    },
+    "route": {
+      "description": "Null only when status is Failed and no route state could be determined",
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "endpointName",
+            "endpointHostName",
+            "url",
+            "originGroupName",
+            "originName",
+            "routeName",
+            "provisioningState"
+          ],
+          "properties": {
+            "endpointName": { "type": "string", "minLength": 1 },
+            "endpointHostName": { "type": "string", "minLength": 1, "pattern": "\\.azurefd\\.net$" },
+            "url": { "type": "string", "pattern": "^https://" },
+            "originGroupName": { "type": "string", "minLength": 1 },
+            "originName": { "type": "string", "minLength": 1 },
+            "routeName": { "type": "string", "minLength": 1 },
+            "provisioningState": {
+              "type": "string",
+              "enum": ["Succeeded", "Failed", "Updating", "Deleting", "Creating"]
+            }
+          }
+        }
+      ]
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message"],
+        "properties": {
+          "code": { "type": "string", "minLength": 1 },
+          "message": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

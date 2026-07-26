@@ -91,7 +91,7 @@ var effectiveTags = union(tags, {
 // ----------------------------------------------------------------------------
 
 // Storage Account for Azure Table Storage
-resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+resource storageAccount 'Microsoft.Storage/storageAccounts@2025-01-01' = {
   name: storageAccountName
   location: location
   tags: effectiveTags
@@ -114,7 +114,7 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
 }
 
 // Table Service for the Storage Account
-resource tableService 'Microsoft.Storage/storageAccounts/tableServices@2023-05-01' = {
+resource tableService 'Microsoft.Storage/storageAccounts/tableServices@2025-01-01' = {
   parent: storageAccount
   name: 'default'
   properties: {
@@ -145,19 +145,19 @@ resource tableService 'Microsoft.Storage/storageAccounts/tableServices@2023-05-0
 }
 
 // Games table
-resource gamesTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-05-01' = {
+resource gamesTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2025-01-01' = {
   parent: tableService
   name: gamesTableName
 }
 
 // Categories table
-resource categoriesTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-05-01' = {
+resource categoriesTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2025-01-01' = {
   parent: tableService
   name: categoriesTableName
 }
 
 // Azure Static Web App
-resource staticWebApp 'Microsoft.Web/staticSites@2023-12-01' = {
+resource staticWebApp 'Microsoft.Web/staticSites@2024-11-01' = {
   name: staticWebAppName
   location: location
   tags: effectiveTags
@@ -217,3 +217,12 @@ output resourceGroupName string = resourceGroup().name
 
 @description('Deployment location')
 output deploymentLocation string = location
+
+@description('Stable inputs for registering this instance with the shared platform (see scripts/instance-route.sh register / contracts/instance-route-cli.md). Consumers should treat this as a single, versioned bundle rather than reconstructing it from individual outputs.')
+output platformRegistrationInputs object = {
+  instanceId: effectiveInstanceId
+  resourceGroupName: resourceGroup().name
+  staticWebAppName: staticWebApp.name
+  staticWebAppId: staticWebApp.id
+  originHostName: staticWebApp.properties.defaultHostname
+}

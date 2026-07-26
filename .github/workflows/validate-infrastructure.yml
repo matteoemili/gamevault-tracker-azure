@@ -1,0 +1,39 @@
+name: Validate Infrastructure
+
+on:
+  pull_request:
+    paths:
+      - 'infra/**'
+      - 'scripts/**'
+      - 'tests/infrastructure/**'
+      - '.github/workflows/validate-infrastructure.yml'
+      - '.github/workflows/ci-cd.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/**'
+      - 'scripts/**'
+      - 'tests/infrastructure/**'
+      - '.github/workflows/ci-cd.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-bicep@v2
+      - name: Build all Bicep templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r template; do
+            az bicep build --file "$template" --stdout >/dev/null
+          done < <(find infra -type f -name '*.bicep' | sort)
+      - name: Syntax-check lifecycle and infrastructure scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          find scripts tests/infrastructure -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+      - name: Run local infrastructure contracts
+        run: bash tests/infrastructure/run-all.sh

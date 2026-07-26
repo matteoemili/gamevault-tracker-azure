@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Instance Unavailable</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Cache-disabled: this page must never be served stale to a healthy instance. -->
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      text-align: center;
+      padding: 2rem;
+      box-sizing: border-box;
+    }
+    main { max-width: 32rem; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    p { color: #94a3b8; line-height: 1.5; }
+    code {
+      display: inline-block;
+      margin-top: 1rem;
+      padding: 0.25rem 0.5rem;
+      background: #1e293b;
+      border-radius: 0.25rem;
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>This instance is temporarily unavailable</h1>
+    <p>
+      The application you are trying to reach cannot be contacted right now.
+      No account data is stored on this page. Please try again shortly.
+    </p>
+    <!-- CORRELATION_ID is a placeholder only; this static page is not
+         dynamically rendered. Operators may replace this file per-incident
+         with a version that has a real correlation identifier if needed. -->
+    <code>correlation-id: CORRELATION_ID</code>
+  </main>
+</body>
+</html>
