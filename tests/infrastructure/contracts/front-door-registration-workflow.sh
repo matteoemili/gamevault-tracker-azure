@@ -109,11 +109,9 @@ else
   # Publication receives explicit, environment-scoped platform and instance
   # inputs rather than relying on an implicit Azure CLI context.
   require_text "platform resource group is explicitly configured" \
-    'PLATFORM_RESOURCE_GROUP_DEV: ${{ vars.GAMEVAULT_PLATFORM_RESOURCE_GROUP_DEV || secrets.GAMEVAULT_PLATFORM_RESOURCE_GROUP_DEV }}'
+    'PLATFORM_RESOURCE_GROUP_DEV: ${{ secrets.GAMEVAULT_PLATFORM_RESOURCE_GROUP_DEV }}'
   require_text "Front Door profile is explicitly configured" \
-    'FRONT_DOOR_PROFILE_PROD: ${{ vars.GAMEVAULT_FRONT_DOOR_PROFILE_PROD || secrets.GAMEVAULT_FRONT_DOOR_PROFILE_PROD }}'
-  require_text "missing platform configuration is visible in the job log" \
-    '::error::Missing or invalid $MISSING_INPUTS'
+    'FRONT_DOOR_PROFILE_PROD: ${{ secrets.GAMEVAULT_FRONT_DOOR_PROFILE_PROD }}'
   require_text "deployment environment is passed to publication" \
     '--environment "$DEPLOYMENT_ENVIRONMENT"'
   require_text "instance resource group is passed to registration" \
