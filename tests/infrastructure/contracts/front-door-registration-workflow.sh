@@ -70,9 +70,31 @@ else
     fi
   }
 
+  require_not_between() {
+    description="$1"
+    start_pattern="$2"
+    end_pattern="$3"
+    rejected_pattern="$4"
+    start_line="$(line_number "$start_pattern")"
+    end_line="$(line_number "$end_pattern")"
+    if [ -n "$start_line" ] && [ -n "$end_line" ] && [ "$start_line" -lt "$end_line" ] &&
+      ! sed -n "${start_line},${end_line}p" "$WORKFLOW_FILE" | grep -F -q -- "$rejected_pattern"; then
+      pass "$description"
+    else
+      fail "$description (unexpected between '$start_pattern' and '$end_pattern': $rejected_pattern)"
+    fi
+  }
+
   # Application publication must not begin until the Static Web App upload
   # has completed successfully.
   require_text "Static Web App upload action is present" 'action: "upload"'
+  require_text "Static Web App upload targets the checked-out branch as production" \
+    'production_branch: ${{ github.head_ref || github.ref_name }}'
+  require_text "Static Web App deployment URL is checked against the production hostname" \
+    'if [ "${DEPLOYED_URL%/}" != "$EXPECTED_URL" ]; then'
+  require_not_between "build job does not leak a named SWA deployment environment" \
+    'build_and_deploy_job:' 'publish_front_door:' \
+    'DEPLOYMENT_ENVIRONMENT:'
   require_after "route registration follows application upload" \
     'action: "upload"' 'name: Register Instance Front Door Route'
   require_after "CORS alignment follows route registration" \

@@ -215,7 +215,6 @@ jobs:
       STATIC_WEB_APP_DEFAULT_HOSTNAME: ${{ needs.deploy_infrastructure.outputs.staticWebAppDefaultHostname }}
       STORAGE_ACCOUNT: ${{ needs.deploy_infrastructure.outputs.storageAccountName }}
       AZURE_RESOURCE_GROUP: ${{ needs.deploy_infrastructure.outputs.resourceGroup }}
-      DEPLOYMENT_ENVIRONMENT: ${{ needs.deploy_infrastructure.outputs.environment }}
 
     steps:
 
@@ -312,7 +311,22 @@ jobs:
           app_location: "/"
           api_location: ""
           output_location: "dist"
+          # Every workflow instance owns a dedicated Static Web App. Deploy the
+          # checked-out branch to that app's production environment so its
+          # default hostname remains the Front Door origin.
+          production_branch: ${{ github.head_ref || github.ref_name }}
           ###### End of Repository/Build Configurations ######
+
+      - name: Validate Static Web App Production Deployment
+        env:
+          DEPLOYED_URL: ${{ steps.builddeploy.outputs.static_web_app_url }}
+        run: |
+          EXPECTED_URL="https://${STATIC_WEB_APP_DEFAULT_HOSTNAME}"
+          if [ "${DEPLOYED_URL%/}" != "$EXPECTED_URL" ]; then
+            echo "::error::Static Web Apps deployed to '${DEPLOYED_URL:-<empty>}' instead of the production URL '$EXPECTED_URL'."
+            exit 1
+          fi
+          echo "✅ Production deployment confirmed: $EXPECTED_URL"
 
       - name: Configure Static Web App Settings
         run: |
