@@ -180,6 +180,9 @@ resource wafAssociation 'Microsoft.Cdn/profiles/securityPolicies@2024-09-01' = i
       ]
     }
   }
+  dependsOn: [
+    endpoint
+  ]
 }
 
 // ----------------------------------------------------------------------------

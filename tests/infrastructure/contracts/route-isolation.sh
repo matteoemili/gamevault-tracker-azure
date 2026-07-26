@@ -14,6 +14,8 @@
 #   4. No resource name embeds a hardcoded/foreign instance identifier -
 #      every per-instance name is derived from variables/parameters, never
 #      a literal like "og-a1" baked into the template.
+#   5. The shared WAF association waits for the endpoint resource before
+#      associating its ID with the Front Door profile.
 #
 # See data-model.md "Instance Route" isolation invariant.
 # Bash 3.2 compatible. Requires: az, jq.
@@ -105,6 +107,22 @@ if [ -z "$hardcoded_names" ]; then
   pass "no hardcoded (non-expression) resource names found"
 else
   fail "found hardcoded resource name(s), expected ARM expressions: $hardcoded_names"
+fi
+
+# --- Assertion 5: the WAF security policy association depends on the
+#     endpoint being provisioned and associated with the profile ---
+waf_endpoint_dependency_count=$(jq '
+  [.resources[]
+   | select(.type == "Microsoft.Cdn/profiles/securityPolicies")
+   | .dependsOn[]?
+   | select(test("Microsoft.Cdn/profiles/afdEndpoints"))
+  ] | length
+' "$ARM_JSON")
+
+if [ "$waf_endpoint_dependency_count" -eq 1 ]; then
+  pass "WAF association waits for the Front Door endpoint"
+else
+  fail "expected WAF association to depend on exactly one Front Door endpoint, found $waf_endpoint_dependency_count dependencies"
 fi
 
 # ----------------------------------------------------------------------------
