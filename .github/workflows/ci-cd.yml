@@ -444,7 +444,7 @@ jobs:
             exit 1
           fi
           jq --arg stage "Preflight" --arg subscriptionId "$SUBSCRIPTION_ID" \
-            '.stage = $stage | .diagnostics = [{code:"PREFLIGHT_OK",message:"Inputs validated for subscription " + $subscriptionId}]' \
+            '.stage = $stage | .diagnostics = [{code:"PREFLIGHT_OK",message:("Inputs validated for subscription " + $subscriptionId)}]' \
             publication-result.json > publication-result.tmp
           mv publication-result.tmp publication-result.json
           echo "SUBSCRIPTION_ID=$SUBSCRIPTION_ID" >> "$GITHUB_ENV"
@@ -494,7 +494,7 @@ jobs:
           jq --arg stage "Register" --arg file "route-registration.json" --arg url "$ENDPOINT_URL" \
             --arg status "$REGISTRATION_STATUS" \
             '.stage = $stage | .publishedUrl = $url | .registrationResultFile = $file |
-             .diagnostics = [{code:"REGISTRATION_" + $status,message:"Route registration returned " + $status}]' \
+             .diagnostics = [{code:("REGISTRATION_" + $status),message:("Route registration returned " + $status)}]' \
             publication-result.json > publication-result.tmp
           mv publication-result.tmp publication-result.json
           echo "endpointUrl=$ENDPOINT_URL" >> "$GITHUB_OUTPUT"

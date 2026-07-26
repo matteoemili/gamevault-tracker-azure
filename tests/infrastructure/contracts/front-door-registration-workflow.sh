@@ -151,7 +151,7 @@ else
   require_text "preflight failure updates the publication result" \
     'code:"PREFLIGHT_FAILED"'
   require_text "registration updates the publication result" \
-    'code:"REGISTRATION_" + $status'
+    'code:("REGISTRATION_" + $status)'
   require_text "registration failure updates the publication result" \
     'code:"REGISTRATION_FAILED"'
   require_text "CORS success updates the publication result" \
