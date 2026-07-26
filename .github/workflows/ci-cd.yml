@@ -65,9 +65,9 @@ jobs:
             ENVIRONMENT="${{ inputs.environment }}"
             INPUT_INSTANCE_ID="${{ inputs.instance_id }}"
           elif [ "$EVENT_NAME" == "pull_request" ]; then
-            # Route registration and instance Bicep support dev/staging/prod.
-            # PR instances use dev infrastructure with their own stable ID.
-            ENVIRONMENT="dev"
+            # PR instances currently use prod infrastructure with their own
+            # stable ID until separate non-production platforms are enabled.
+            ENVIRONMENT="prod"
             INPUT_INSTANCE_ID="pr${{ github.event.pull_request.number }}"
           else
             ENVIRONMENT="prod"
@@ -207,8 +207,6 @@ jobs:
     runs-on: ubuntu-latest
     name: Build and Deploy Job
     needs: deploy_infrastructure
-    outputs:
-      staticWebAppOriginHostname: ${{ steps.validate_swa.outputs.deployedHostname }}
     concurrency:
       group: instance-route-${{ needs.deploy_infrastructure.outputs.instanceId }}
       cancel-in-progress: false
@@ -217,6 +215,7 @@ jobs:
       STATIC_WEB_APP_DEFAULT_HOSTNAME: ${{ needs.deploy_infrastructure.outputs.staticWebAppDefaultHostname }}
       STORAGE_ACCOUNT: ${{ needs.deploy_infrastructure.outputs.storageAccountName }}
       AZURE_RESOURCE_GROUP: ${{ needs.deploy_infrastructure.outputs.resourceGroup }}
+      DEPLOYMENT_ENVIRONMENT: ${{ needs.deploy_infrastructure.outputs.environment }}
 
     steps:
 
@@ -313,36 +312,7 @@ jobs:
           app_location: "/"
           api_location: ""
           output_location: "dist"
-          # PRs use Azure's numbered preview environment. Push and manual runs
-          # deploy their selected branch to the app's production environment.
-          production_branch: ${{ github.base_ref || github.ref_name }}
           ###### End of Repository/Build Configurations ######
-
-      - name: Validate Static Web App Deployment
-        id: validate_swa
-        env:
-          DEPLOYED_URL: ${{ steps.builddeploy.outputs.static_web_app_url }}
-          EVENT_NAME: ${{ github.event_name }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          EXPECTED_URL="https://${STATIC_WEB_APP_DEFAULT_HOSTNAME}"
-          DEPLOYED_URL="${DEPLOYED_URL%/}"
-          DEPLOYED_HOSTNAME="${DEPLOYED_URL#https://}"
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            DEFAULT_SUBDOMAIN="${STATIC_WEB_APP_DEFAULT_HOSTNAME%%.*}"
-            case "$DEPLOYED_HOSTNAME" in
-              "${DEFAULT_SUBDOMAIN}-${PR_NUMBER}."*.azurestaticapps.net) ;;
-              *)
-                echo "::error::Static Web Apps deployed PR $PR_NUMBER to unexpected URL '${DEPLOYED_URL:-<empty>}'."
-                exit 1
-                ;;
-            esac
-          elif [ "$DEPLOYED_URL" != "$EXPECTED_URL" ]; then
-            echo "::error::Static Web Apps deployed to '${DEPLOYED_URL:-<empty>}' instead of the production URL '$EXPECTED_URL'."
-            exit 1
-          fi
-          echo "deployedHostname=$DEPLOYED_HOSTNAME" >> "$GITHUB_OUTPUT"
-          echo "✅ Static Web App deployment confirmed: $DEPLOYED_URL"
 
       - name: Configure Static Web App Settings
         run: |
@@ -380,7 +350,6 @@ jobs:
       INSTANCE_ID: ${{ needs.deploy_infrastructure.outputs.instanceId }}
       STATIC_WEB_APP: ${{ needs.deploy_infrastructure.outputs.staticWebAppName }}
       STATIC_WEB_APP_DEFAULT_HOSTNAME: ${{ needs.deploy_infrastructure.outputs.staticWebAppDefaultHostname }}
-      STATIC_WEB_APP_ORIGIN_HOSTNAME: ${{ needs.build_and_deploy_job.outputs.staticWebAppOriginHostname }}
       STORAGE_ACCOUNT: ${{ needs.deploy_infrastructure.outputs.storageAccountName }}
       AZURE_RESOURCE_GROUP: ${{ needs.deploy_infrastructure.outputs.resourceGroup }}
       DEPLOYMENT_ENVIRONMENT: ${{ needs.deploy_infrastructure.outputs.environment }}
@@ -459,12 +428,11 @@ jobs:
           test -n "$AZURE_RESOURCE_GROUP" || PREFLIGHT_OK=false
           test -n "$STATIC_WEB_APP" || PREFLIGHT_OK=false
           test -n "$STATIC_WEB_APP_DEFAULT_HOSTNAME" || PREFLIGHT_OK=false
-          test -n "$STATIC_WEB_APP_ORIGIN_HOSTNAME" || PREFLIGHT_OK=false
           test -n "$STORAGE_ACCOUNT" || PREFLIGHT_OK=false
           test -n "$PLATFORM_RESOURCE_GROUP" || PREFLIGHT_OK=false
           test -n "$FRONT_DOOR_PROFILE" || PREFLIGHT_OK=false
           test "$AZURE_RESOURCE_GROUP" != "$PLATFORM_RESOURCE_GROUP" || PREFLIGHT_OK=false
-          case "$STATIC_WEB_APP_ORIGIN_HOSTNAME" in
+          case "$STATIC_WEB_APP_DEFAULT_HOSTNAME" in
             *.azurestaticapps.net) ;;
             *) PREFLIGHT_OK=false ;;
           esac
@@ -476,7 +444,7 @@ jobs:
             exit 1
           fi
           jq --arg stage "Preflight" --arg subscriptionId "$SUBSCRIPTION_ID" \
-            '.stage = $stage | .diagnostics = [{code:"PREFLIGHT_OK",message:("Inputs validated for subscription " + $subscriptionId)}]' \
+            '.stage = $stage | .diagnostics = [{code:"PREFLIGHT_OK",message:"Inputs validated for subscription " + $subscriptionId}]' \
             publication-result.json > publication-result.tmp
           mv publication-result.tmp publication-result.json
           echo "SUBSCRIPTION_ID=$SUBSCRIPTION_ID" >> "$GITHUB_ENV"
@@ -493,7 +461,6 @@ jobs:
             --front-door-profile "$FRONT_DOOR_PROFILE" \
             --subscription-id "$(az account show --query id -o tsv)" \
             --environment "$DEPLOYMENT_ENVIRONMENT" \
-            --origin-hostname "$STATIC_WEB_APP_ORIGIN_HOSTNAME" \
             --forwarding-config-file route-forwarding-gateway.json \
             > route-registration.json
           REGISTER_RC=$?
@@ -527,7 +494,7 @@ jobs:
           jq --arg stage "Register" --arg file "route-registration.json" --arg url "$ENDPOINT_URL" \
             --arg status "$REGISTRATION_STATUS" \
             '.stage = $stage | .publishedUrl = $url | .registrationResultFile = $file |
-             .diagnostics = [{code:("REGISTRATION_" + $status),message:("Route registration returned " + $status)}]' \
+             .diagnostics = [{code:"REGISTRATION_" + $status,message:"Route registration returned " + $status}]' \
             publication-result.json > publication-result.tmp
           mv publication-result.tmp publication-result.json
           echo "endpointUrl=$ENDPOINT_URL" >> "$GITHUB_OUTPUT"
@@ -568,7 +535,7 @@ jobs:
               --platform-resource-group "$PLATFORM_RESOURCE_GROUP" \
               --front-door-profile "$FRONT_DOOR_PROFILE" \
               --subscription-id "$SUBSCRIPTION_ID" \
-              --expected-origin-hostname "$STATIC_WEB_APP_ORIGIN_HOSTNAME" \
+              --expected-origin-hostname "$STATIC_WEB_APP_DEFAULT_HOSTNAME" \
               > "$TMP_VERIFICATION"
             VERIFY_RC=$?
             if [ -s "$TMP_VERIFICATION" ]; then
