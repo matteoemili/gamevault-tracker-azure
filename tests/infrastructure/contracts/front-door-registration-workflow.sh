@@ -88,10 +88,14 @@ else
   # Application publication must not begin until the Static Web App upload
   # has completed successfully.
   require_text "Static Web App upload action is present" 'action: "upload"'
-  require_text "Static Web App upload targets the checked-out branch as production" \
-    'production_branch: ${{ github.head_ref || github.ref_name }}'
-  require_text "Static Web App deployment URL is checked against the production hostname" \
-    'if [ "${DEPLOYED_URL%/}" != "$EXPECTED_URL" ]; then'
+  require_text "Static Web App upload identifies the production branch" \
+    'production_branch: ${{ github.base_ref || github.ref_name }}'
+  require_text "non-PR deployment URL is checked against the production hostname" \
+    'elif [ "$DEPLOYED_URL" != "$EXPECTED_URL" ]; then'
+  require_text "PR deployment URL is checked against its Azure preview hostname" \
+    '"${DEFAULT_SUBDOMAIN}-${PR_NUMBER}."*.azurestaticapps.net)'
+  require_text "actual Static Web App hostname is exposed to publication" \
+    'staticWebAppOriginHostname: ${{ steps.validate_swa.outputs.deployedHostname }}'
   require_not_between "build job does not leak a named SWA deployment environment" \
     'build_and_deploy_job:' 'publish_front_door:' \
     'DEPLOYMENT_ENVIRONMENT:'
@@ -105,15 +109,17 @@ else
   # Publication receives explicit, environment-scoped platform and instance
   # inputs rather than relying on an implicit Azure CLI context.
   require_text "platform resource group is explicitly configured" \
-    'PLATFORM_RESOURCE_GROUP_DEV: ${{ vars.GAMEVAULT_PLATFORM_RESOURCE_GROUP_DEV }}'
+    'PLATFORM_RESOURCE_GROUP_DEV: ${{ secrets.GAMEVAULT_PLATFORM_RESOURCE_GROUP_DEV }}'
   require_text "Front Door profile is explicitly configured" \
-    'FRONT_DOOR_PROFILE_PROD: ${{ vars.GAMEVAULT_FRONT_DOOR_PROFILE_PROD }}'
+    'FRONT_DOOR_PROFILE_PROD: ${{ secrets.GAMEVAULT_FRONT_DOOR_PROFILE_PROD }}'
   require_text "deployment environment is passed to publication" \
     '--environment "$DEPLOYMENT_ENVIRONMENT"'
   require_text "instance resource group is passed to registration" \
     '--instance-resource-group "$AZURE_RESOURCE_GROUP"'
   require_text "Static Web App name is passed to registration" \
     '--static-web-app-name "$STATIC_WEB_APP"'
+  require_text "actual deployed hostname is passed to registration" \
+    '--origin-hostname "$STATIC_WEB_APP_ORIGIN_HOSTNAME"'
   require_text "platform resource group is passed to registration" \
     '--platform-resource-group "$PLATFORM_RESOURCE_GROUP"'
   require_text "Front Door profile is passed to registration" \
@@ -149,6 +155,8 @@ else
     '--platform-resource-group "$PLATFORM_RESOURCE_GROUP"'
   require_text "Front Door profile is passed to verification" \
     '--front-door-profile "$FRONT_DOOR_PROFILE"'
+  require_text "actual deployed hostname is passed to verification" \
+    '--expected-origin-hostname "$STATIC_WEB_APP_ORIGIN_HOSTNAME"'
   require_text "verification accepts only Succeeded" \
     "jq -e '.status == \"Succeeded\"' route-verification.json"
 
