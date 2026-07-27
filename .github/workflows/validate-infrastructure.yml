@@ -1,4 +1,4 @@
-name: Validate Infrastructure
+name: Bicep validation and infrastructure testing
 
 on:
   pull_request:

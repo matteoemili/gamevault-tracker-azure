@@ -1,15 +1,13 @@
-name: Azure Static Web Apps CI/CD
+name: Instance deployment and Front Door publication
 
 on:
   push:
     branches:
       - main
-      - CORS-setup
   pull_request:
     types: [opened, synchronize, reopened, closed]
     branches:
       - main
-      - multi-instance
   workflow_dispatch:
     inputs:
       instance_id:
