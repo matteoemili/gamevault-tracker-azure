@@ -2,16 +2,16 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: gamevault-tracker-azure-iac
-  description: Azure Bicep infrastructure for GameVault Tracker, including Static Web App hosting and Azure Table Storage data resources.
+  description: Bicep infrastructure for isolated GameVault instances and the shared Azure Front Door entry platform that publishes their routes.
   annotations:
     github.com/project-slug: matteoemili/gamevault-tracker-azure
-    backstage.io/techdocs-ref: dir:.
   tags:
     - azure
     - bicep
     - iac
-    - static-web-apps
-    - table-storage
+    - multi-instance
+    - azure-front-door
+    - observability
   links:
     - url: https://github.com/matteoemili/gamevault-tracker-azure
       title: Source Code
@@ -23,47 +23,212 @@ metadata:
       title: Infrastructure Documentation
       icon: docs
     - url: https://github.com/matteoemili/gamevault-tracker-azure/blob/main/scripts/deploy-infra.sh
-      title: Deployment Script
+      title: Instance Deployment Script
       icon: docs
 spec:
   type: iac
-  system: gamevault-tracker-azure # Optional: groups components together
-  lifecycle: production # e.g., experimental, production, deprecated
-  owner: acme # Links to a Group or User entity
+  system: gamevault-tracker-azure
+  lifecycle: production
+  owner: user:default/matteoemili
   dependsOn:
     - resource:default/gamevault-tracker-azure-static-web-app
     - resource:default/gamevault-tracker-azure-table-storage
+    - resource:default/gamevault-tracker-azure-front-door
+    - resource:default/gamevault-tracker-azure-front-door-waf
+    - resource:default/gamevault-tracker-azure-front-door-routes
+    - resource:default/gamevault-tracker-azure-maintenance-origin-storage
+    - resource:default/gamevault-tracker-azure-log-analytics
+    - resource:default/gamevault-tracker-azure-platform-observability
+    - resource:default/gamevault-tracker-azure-platform-budget
+    - resource:default/gamevault-tracker-azure-platform-rbac
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Resource
 metadata:
   name: gamevault-tracker-azure-static-web-app
-  description: Azure Static Web App provisioned by infra/main.bicep to host the Vite React frontend from the dist build output.
+  description: Per-instance Azure Static Web App provisioned by infra/main.bicep to host the Vite frontend from dist.
   annotations:
     github.com/project-slug: matteoemili/gamevault-tracker-azure
   tags:
     - azure
     - static-web-apps
     - hosting
+    - multi-instance
 spec:
   type: static-site
   system: gamevault-tracker-azure
   lifecycle: production
-  owner: acme
+  owner: user:default/matteoemili
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Resource
 metadata:
   name: gamevault-tracker-azure-table-storage
-  description: Azure Storage Account Table Service provisioned by infra/main.bicep with games and categories tables plus browser CORS rules.
+  description: Per-instance Azure Storage Account Table Service with games and categories tables and browser CORS rules.
   annotations:
     github.com/project-slug: matteoemili/gamevault-tracker-azure
   tags:
     - azure
     - storage
     - table-storage
+    - multi-instance
 spec:
   type: database
   system: gamevault-tracker-azure
   lifecycle: production
-  owner: acme
+  owner: user:default/matteoemili
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: gamevault-tracker-azure-front-door
+  description: Shared Azure Front Door Premium profile that provides the domain-free global entry point for up to 25 isolated instances.
+  annotations:
+    github.com/project-slug: matteoemili/gamevault-tracker-azure
+  tags:
+    - azure
+    - azure-front-door
+    - cdn
+    - routing
+    - multi-instance
+spec:
+  type: cdn
+  system: gamevault-tracker-azure
+  lifecycle: production
+  owner: user:default/matteoemili
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: gamevault-tracker-azure-front-door-waf
+  description: Centrally managed Azure Front Door Premium Web Application Firewall policy with Microsoft Default and Bot Manager rule sets.
+  annotations:
+    github.com/project-slug: matteoemili/gamevault-tracker-azure
+  tags:
+    - azure
+    - azure-front-door
+    - waf
+    - security
+    - multi-instance
+spec:
+  type: web-application-firewall
+  system: gamevault-tracker-azure
+  lifecycle: production
+  owner: user:default/matteoemili
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: gamevault-tracker-azure-front-door-routes
+  description: Per-instance Azure Front Door endpoints, origin groups, Static Web App origins, routes, and optional WAF security-policy associations published by the route workflow.
+  annotations:
+    github.com/project-slug: matteoemili/gamevault-tracker-azure
+  tags:
+    - azure
+    - azure-front-door
+    - routing
+    - static-web-apps
+    - multi-instance
+spec:
+  type: cdn-routing
+  system: gamevault-tracker-azure
+  lifecycle: production
+  owner: user:default/matteoemili
+  dependsOn:
+    - resource:default/gamevault-tracker-azure-front-door
+    - resource:default/gamevault-tracker-azure-static-web-app
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: gamevault-tracker-azure-maintenance-origin-storage
+  description: Shared Azure Blob Storage account and maintenance container that can serve a generic fallback page as a lower-priority Front Door origin.
+  annotations:
+    github.com/project-slug: matteoemili/gamevault-tracker-azure
+  tags:
+    - azure
+    - storage
+    - blob-storage
+    - maintenance
+    - azure-front-door
+spec:
+  type: object-storage
+  system: gamevault-tracker-azure
+  lifecycle: production
+  owner: user:default/matteoemili
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: gamevault-tracker-azure-log-analytics
+  description: Shared Azure Log Analytics workspace retaining Azure Front Door access, health-probe, Web Application Firewall, and metric diagnostics for at least 90 days.
+  annotations:
+    github.com/project-slug: matteoemili/gamevault-tracker-azure
+  tags:
+    - azure
+    - log-analytics
+    - observability
+    - azure-front-door
+spec:
+  type: log-analytics
+  system: gamevault-tracker-azure
+  lifecycle: production
+  owner: user:default/matteoemili
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: gamevault-tracker-azure-platform-observability
+  description: Azure Monitor diagnostic settings, action group, metric alerts, and activity-log alerts for the shared Front Door platform.
+  annotations:
+    github.com/project-slug: matteoemili/gamevault-tracker-azure
+  tags:
+    - azure
+    - azure-monitor
+    - observability
+    - alerting
+    - azure-front-door
+spec:
+  type: monitoring
+  system: gamevault-tracker-azure
+  lifecycle: production
+  owner: user:default/matteoemili
+  dependsOn:
+    - resource:default/gamevault-tracker-azure-front-door
+    - resource:default/gamevault-tracker-azure-log-analytics
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: gamevault-tracker-azure-platform-budget
+  description: Optional subscription-scoped monthly Azure cost budget for the shared platform resource group, created when a nonzero budget amount is configured.
+  annotations:
+    github.com/project-slug: matteoemili/gamevault-tracker-azure
+  tags:
+    - azure
+    - cost-management
+    - budget
+    - multi-instance
+spec:
+  type: cost-management
+  system: gamevault-tracker-azure
+  lifecycle: production
+  owner: user:default/matteoemili
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: gamevault-tracker-azure-platform-rbac
+  description: Optional Azure role assignments for shared-platform deployment, instance-route deployment, and platform operators.
+  annotations:
+    github.com/project-slug: matteoemili/gamevault-tracker-azure
+  tags:
+    - azure
+    - rbac
+    - authorization
+    - multi-instance
+spec:
+  type: access-control
+  system: gamevault-tracker-azure
+  lifecycle: production
+  owner: user:default/matteoemili
