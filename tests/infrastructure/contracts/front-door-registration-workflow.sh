@@ -50,10 +50,10 @@ else
   require_text() {
     description="$1"
     pattern="$2"
-    if [ -n "$(line_number "$pattern")" ]; then
+    if grep -F -q -- "$pattern" "$WORKFLOW_FILE" "$ROOT_DIR"/scripts/pipeline/*/*.sh 2>/dev/null; then
       pass "$description"
     else
-      fail "$description (missing: $pattern)"
+      fail "$description (missing from workflow or extracted pipeline scripts: $pattern)"
     fi
   }
 
@@ -143,7 +143,9 @@ else
   require_text "registered endpoint is exported" \
     'echo "endpointUrl=$ENDPOINT_URL" >> "$GITHUB_OUTPUT"'
   require_text "CORS uses the registered endpoint" \
-    '--origin "${{ steps.register_route.outputs.endpointUrl }}"'
+    '--origin "$ENDPOINT_URL"'
+  require_text "registered endpoint is passed to the CORS script" \
+    'ENDPOINT_URL: ${{ steps.register_route.outputs.endpointUrl }}'
   require_text "CORS targets the deployed storage account" \
     '--storage-account-name "$STORAGE_ACCOUNT"'
 

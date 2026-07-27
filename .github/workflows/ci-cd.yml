@@ -58,55 +58,12 @@ jobs:
 
       - name: Determine Instance ID and Environment
         id: set_instance
-        run: |
-          # Determine environment
-          EVENT_NAME="${{ github.event_name }}"
-          if [ "$EVENT_NAME" == "workflow_dispatch" ]; then
-            ENVIRONMENT="${{ inputs.environment }}"
-            INPUT_INSTANCE_ID="${{ inputs.instance_id }}"
-          elif [ "$EVENT_NAME" == "pull_request" ]; then
-            # PR instances currently use prod infrastructure with their own
-            # stable ID until separate non-production platforms are enabled.
-            ENVIRONMENT="prod"
-            INPUT_INSTANCE_ID="pr${{ github.event.pull_request.number }}"
-          else
-            ENVIRONMENT="prod"
-            INPUT_INSTANCE_ID=""
-          fi
-
-          echo "Environment: $ENVIRONMENT"
-
-          # Determine instance ID
-          if [ -n "$INPUT_INSTANCE_ID" ]; then
-            # Use provided instance ID (for redeployment)
-            INSTANCE_ID="$INPUT_INSTANCE_ID"
-            echo "♻️  Redeploying to existing instance: $INSTANCE_ID"
-          else
-            # Generate new instance ID (8 character random alphanumeric, lowercase)
-            INSTANCE_ID=$(openssl rand -hex 4)
-            echo "🆕 Generated new instance ID: $INSTANCE_ID"
-          fi
-
-          # Set resource group name
-          RESOURCE_GROUP="rg-gamevault-${INSTANCE_ID}"
-
-          echo "instanceId=$INSTANCE_ID" >> $GITHUB_OUTPUT
-          echo "resourceGroup=$RESOURCE_GROUP" >> $GITHUB_OUTPUT
-          echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
-
-          # Set environment for subsequent steps
-          echo "AZURE_RESOURCE_GROUP=$RESOURCE_GROUP" >> $GITHUB_ENV
-          echo "DEPLOYMENT_ENVIRONMENT=$ENVIRONMENT" >> $GITHUB_ENV
-          echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
-
-          # Determine bicep params file
-          if [ "$ENVIRONMENT" == "dev" ] || [ "$ENVIRONMENT" == "pr" ]; then
-            echo "BICEP_PARAMS_FILE=infra/main.dev.bicepparam" >> $GITHUB_ENV
-          elif [ "$ENVIRONMENT" == "staging" ]; then
-            echo "BICEP_PARAMS_FILE=infra/main.staging.bicepparam" >> $GITHUB_ENV
-          else
-            echo "BICEP_PARAMS_FILE=infra/main.bicepparam" >> $GITHUB_ENV
-          fi
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_ENVIRONMENT: ${{ inputs.environment }}
+          INPUT_INSTANCE_ID: ${{ inputs.instance_id }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: ./scripts/pipeline/infrastructure/determine-instance.sh
 
       - name: Azure Login
         uses: azure/login@v2
@@ -114,90 +71,25 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS_SPONSORSHIP }}
 
       - name: Create Resource Group
-        run: |
-          echo "📦 Creating resource group: ${{ env.AZURE_RESOURCE_GROUP }}"
-          az group create \
-            --name ${{ env.AZURE_RESOURCE_GROUP }} \
-            --location ${{ env.AZURE_LOCATION }} \
-            --tags \
-              application="GameVault Tracker" \
-              environment="${{ env.DEPLOYMENT_ENVIRONMENT }}" \
-              managedBy="GitHub Actions" \
-              instanceId="${{ env.INSTANCE_ID }}"
-          echo "✅ Resource group created"
+        run: ./scripts/pipeline/infrastructure/create-resource-group.sh
 
       - name: Deploy Infrastructure
         id: deploy
-        run: |
-          echo "🚀 Deploying infrastructure..."
-          echo "Instance ID: ${{ env.INSTANCE_ID }}"
-          echo "Environment: ${{ env.DEPLOYMENT_ENVIRONMENT }}"
-          echo "Resource Group: ${{ env.AZURE_RESOURCE_GROUP }}"
-          echo "Params File: ${{ env.BICEP_PARAMS_FILE }}"
-
-          DEPLOYMENT_OUTPUT=$(az deployment group create \
-            --name "gamevault-${{ github.run_number }}" \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --template-file ${{ env.BICEP_FILE }} \
-            --parameters ${{ env.BICEP_PARAMS_FILE }} \
-            --parameters instanceId=${{ env.INSTANCE_ID }} \
-            --query 'properties.outputs' \
-            --output json)
-
-          echo "📊 Deployment outputs:"
-          echo "$DEPLOYMENT_OUTPUT" | jq '.'
-
-          # Extract outputs for subsequent jobs
-          echo "instanceId=$(echo $DEPLOYMENT_OUTPUT | jq -r '.instanceId.value')" >> $GITHUB_OUTPUT
-          echo "storageAccountName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.storageAccountName.value')" >> $GITHUB_OUTPUT
-          echo "staticWebAppName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.staticWebAppName.value')" >> $GITHUB_OUTPUT
-          echo "staticWebAppDefaultHostname=$(echo $DEPLOYMENT_OUTPUT | jq -r '.staticWebAppDefaultHostname.value')" >> $GITHUB_OUTPUT
-          echo "staticWebAppUrl=$(echo $DEPLOYMENT_OUTPUT | jq -r '.staticWebAppUrl.value')" >> $GITHUB_OUTPUT
-          echo "gamesTableName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.gamesTableName.value')" >> $GITHUB_OUTPUT
-          echo "categoriesTableName=$(echo $DEPLOYMENT_OUTPUT | jq -r '.categoriesTableName.value')" >> $GITHUB_OUTPUT
-
-          echo "✅ Infrastructure deployed successfully"
+        run: ./scripts/pipeline/infrastructure/deploy-infrastructure.sh
 
       - name: Configure Storage CORS
-        run: |
-          STORAGE_ACCOUNT="${{ steps.deploy.outputs.storageAccountName }}"
-          WEB_APP_URL="${{ steps.deploy.outputs.staticWebAppUrl }}"
-
-          echo "🌐 Configuring CORS for Table Service..."
-          echo "Storage Account: $STORAGE_ACCOUNT"
-          echo "Allowed Origin: $WEB_APP_URL"
-
-          az storage cors add \
-            --account-name "$STORAGE_ACCOUNT" \
-            --services t \
-            --methods GET POST PUT DELETE OPTIONS PATCH \
-            --origins "$WEB_APP_URL" \
-            --allowed-headers "*" \
-            --exposed-headers "*" \
-            --max-age 3600
-
-          echo "✅ CORS configured successfully"
+        env:
+          STORAGE_ACCOUNT: ${{ steps.deploy.outputs.storageAccountName }}
+          WEB_APP_URL: ${{ steps.deploy.outputs.staticWebAppUrl }}
+        run: ./scripts/pipeline/infrastructure/configure-storage-cors.sh
 
       - name: Display Deployment Summary
-        run: |
-          echo "=================================================="
-          echo "🎉 Deployment Complete!"
-          echo "=================================================="
-          echo ""
-          echo "📋 Instance Details:"
-          echo "  Instance ID:     ${{ steps.deploy.outputs.instanceId }}"
-          echo "  Resource Group:  ${{ env.AZURE_RESOURCE_GROUP }}"
-          echo "  Environment:     ${{ env.DEPLOYMENT_ENVIRONMENT }}"
-          echo ""
-          echo "🌐 Resources:"
-          echo "  Static Web App:  ${{ steps.deploy.outputs.staticWebAppName }}"
-          echo "  Storage Account: ${{ steps.deploy.outputs.storageAccountName }}"
-          echo "  Web App URL:     ${{ steps.deploy.outputs.staticWebAppUrl }}"
-          echo ""
-          echo "♻️  To redeploy to this instance:"
-          echo "  Use Instance ID: ${{ steps.deploy.outputs.instanceId }}"
-          echo ""
-          echo "=================================================="
+        env:
+          INSTANCE_ID: ${{ steps.deploy.outputs.instanceId }}
+          STATIC_WEB_APP: ${{ steps.deploy.outputs.staticWebAppName }}
+          STORAGE_ACCOUNT: ${{ steps.deploy.outputs.storageAccountName }}
+          STATIC_WEB_APP_URL: ${{ steps.deploy.outputs.staticWebAppUrl }}
+        run: ./scripts/pipeline/infrastructure/display-deployment-summary.sh
 
   # ============================================================================
   # Build and Deploy Application Job
@@ -232,75 +124,27 @@ jobs:
 
       - name: Generate SAS Token
         id: generate_sas
-        run: |
-          STORAGE_ACCOUNT="${{ env.STORAGE_ACCOUNT }}"
-
-          echo "🔑 Retrieving storage account key..."
-          ACCOUNT_KEY=$(az storage account keys list \
-            --account-name "$STORAGE_ACCOUNT" \
-            --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
-            --query '[0].value' \
-            --output tsv)
-
-          if [ -z "$ACCOUNT_KEY" ]; then
-            echo "❌ Failed to retrieve storage account key"
-            exit 1
-          fi
-
-          echo "✅ Storage account key retrieved"
-
-          # Calculate expiry date (1 year from now)
-          EXPIRY=$(date -u -v+1y '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '+1 year' '+%Y-%m-%dT%H:%M:%SZ')
-
-          echo "🔐 Generating SAS token (valid until $EXPIRY)..."
-          # Generate SAS token with table permissions (Read, Add, Update, Delete)
-          SAS_TOKEN=$(az storage account generate-sas \
-            --account-name "$STORAGE_ACCOUNT" \
-            --account-key "$ACCOUNT_KEY" \
-            --services t \
-            --resource-types sco \
-            --permissions raud \
-            --expiry "$EXPIRY" \
-            --https-only \
-            --output tsv)
-
-          if [ -z "$SAS_TOKEN" ]; then
-            echo "❌ Failed to generate SAS token"
-            exit 1
-          fi
-
-          echo "✅ SAS token generated successfully (length: ${#SAS_TOKEN} characters)"
-          echo "sas_token=$SAS_TOKEN" >> $GITHUB_OUTPUT
+        run: ./scripts/pipeline/application/generate-sas-token.sh
 
       - name: Get SWA Deployment Token
         id: get_token
-        run: |
-          SWA_NAME="${{ env.STATIC_WEB_APP }}"
-          RG_NAME="${{ env.AZURE_RESOURCE_GROUP }}"
-          TOKEN=$(az staticwebapp secrets list --name $SWA_NAME --resource-group $RG_NAME --query "properties.apiKey" -o tsv)
-          echo "::add-mask::$TOKEN"
-          echo "swa_token=$TOKEN" >> $GITHUB_OUTPUT
+        run: ./scripts/pipeline/application/get-swa-deployment-token.sh
 
       - name: Debug Environment Variables
-        run: |
-          echo "🔍 Environment variables being passed to build:"
-          echo "VITE_AZURE_STORAGE_ACCOUNT_NAME: ${{ needs.deploy_infrastructure.outputs.storageAccountName }}"
-          echo "VITE_AZURE_GAMES_TABLE_NAME: ${{ needs.deploy_infrastructure.outputs.gamesTableName }}"
-          echo "VITE_AZURE_CATEGORIES_TABLE_NAME: ${{ needs.deploy_infrastructure.outputs.categoriesTableName }}"
-          echo "SAS Token length: ${#SAS_TOKEN}"
         env:
           SAS_TOKEN: ${{ steps.generate_sas.outputs.sas_token }}
+          VITE_AZURE_STORAGE_ACCOUNT_NAME: ${{ needs.deploy_infrastructure.outputs.storageAccountName }}
+          VITE_AZURE_GAMES_TABLE_NAME: ${{ needs.deploy_infrastructure.outputs.gamesTableName }}
+          VITE_AZURE_CATEGORIES_TABLE_NAME: ${{ needs.deploy_infrastructure.outputs.categoriesTableName }}
+        run: ./scripts/pipeline/application/debug-build-environment.sh
 
       - name: Create Production Environment File
-        run: |
-          echo "📝 Creating .env.production file..."
-          cat > .env.production << EOF
-          VITE_AZURE_STORAGE_ACCOUNT_NAME=${{ needs.deploy_infrastructure.outputs.storageAccountName }}
-          VITE_AZURE_STORAGE_SAS_TOKEN=${{ steps.generate_sas.outputs.sas_token }}
-          VITE_AZURE_GAMES_TABLE_NAME=${{ needs.deploy_infrastructure.outputs.gamesTableName }}
-          VITE_AZURE_CATEGORIES_TABLE_NAME=${{ needs.deploy_infrastructure.outputs.categoriesTableName }}
-          EOF
-          echo "✅ .env.production created"
+        env:
+          VITE_AZURE_STORAGE_ACCOUNT_NAME: ${{ needs.deploy_infrastructure.outputs.storageAccountName }}
+          VITE_AZURE_STORAGE_SAS_TOKEN: ${{ steps.generate_sas.outputs.sas_token }}
+          VITE_AZURE_GAMES_TABLE_NAME: ${{ needs.deploy_infrastructure.outputs.gamesTableName }}
+          VITE_AZURE_CATEGORIES_TABLE_NAME: ${{ needs.deploy_infrastructure.outputs.categoriesTableName }}
+        run: ./scripts/pipeline/application/create-production-environment-file.sh
 
       - name: Build And Deploy
         id: builddeploy
@@ -322,38 +166,15 @@ jobs:
           DEPLOYED_URL: ${{ steps.builddeploy.outputs.static_web_app_url }}
           EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          EXPECTED_URL="https://${STATIC_WEB_APP_DEFAULT_HOSTNAME}"
-          DEPLOYED_URL="${DEPLOYED_URL%/}"
-          DEPLOYED_HOSTNAME="${DEPLOYED_URL#https://}"
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            DEFAULT_SUBDOMAIN="${STATIC_WEB_APP_DEFAULT_HOSTNAME%%.*}"
-            case "$DEPLOYED_HOSTNAME" in
-              "${DEFAULT_SUBDOMAIN}-${PR_NUMBER}."*.azurestaticapps.net) ;;
-              *)
-                echo "::error::Static Web Apps deployed PR $PR_NUMBER to unexpected URL '${DEPLOYED_URL:-<empty>}'."
-                exit 1
-                ;;
-            esac
-          elif [ "$DEPLOYED_URL" != "$EXPECTED_URL" ]; then
-            echo "::error::Static Web Apps deployed to '${DEPLOYED_URL:-<empty>}' instead of the production URL '$EXPECTED_URL'."
-            exit 1
-          fi
-          echo "deployedHostname=$DEPLOYED_HOSTNAME" >> "$GITHUB_OUTPUT"
-          echo "Static Web App deployment confirmed: $DEPLOYED_URL"
+        run: ./scripts/pipeline/application/validate-static-web-app-deployment.sh
 
       - name: Configure Static Web App Settings
-        run: |
-          echo "🔧 Configuring Static Web App application settings..."
-          az staticwebapp appsettings set \
-            --name "${{ env.STATIC_WEB_APP }}" \
-            --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
-            --setting-names \
-              VITE_AZURE_STORAGE_ACCOUNT_NAME="${{ needs.deploy_infrastructure.outputs.storageAccountName }}" \
-              VITE_AZURE_STORAGE_SAS_TOKEN="${{ steps.generate_sas.outputs.sas_token }}" \
-              VITE_AZURE_GAMES_TABLE_NAME="${{ needs.deploy_infrastructure.outputs.gamesTableName }}" \
-              VITE_AZURE_CATEGORIES_TABLE_NAME="${{ needs.deploy_infrastructure.outputs.categoriesTableName }}"
-          echo "✅ Application settings configured"
+        env:
+          VITE_AZURE_STORAGE_ACCOUNT_NAME: ${{ needs.deploy_infrastructure.outputs.storageAccountName }}
+          VITE_AZURE_STORAGE_SAS_TOKEN: ${{ steps.generate_sas.outputs.sas_token }}
+          VITE_AZURE_GAMES_TABLE_NAME: ${{ needs.deploy_infrastructure.outputs.gamesTableName }}
+          VITE_AZURE_CATEGORIES_TABLE_NAME: ${{ needs.deploy_infrastructure.outputs.categoriesTableName }}
+        run: ./scripts/pipeline/application/configure-static-web-app-settings.sh
 
   # ============================================================================
   # Serialized publication job
@@ -392,21 +213,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Initialize Publication Result
-        run: |
-          jq -n \
-            --arg runId "${{ github.run_id }}" \
-            --arg instanceId "$INSTANCE_ID" \
-            '{
-              schemaVersion: "1.0",
-              runId: $runId,
-              instanceId: $instanceId,
-              stage: "Preflight",
-              status: "Pending",
-              publishedUrl: null,
-              registrationResultFile: null,
-              verificationResultFile: null,
-              diagnostics: []
-            }' > publication-result.json
+        run: ./scripts/pipeline/front-door/initialize-publication-result.sh
 
       - name: Azure Login
         uses: azure/login@v2
@@ -415,221 +222,27 @@ jobs:
 
       - name: Resolve Environment Platform Configuration
         id: resolve_platform
-        run: |
-          set +e
-          CONFIG_OK=true
-          PLATFORM_RESOURCE_GROUP=""
-          FRONT_DOOR_PROFILE=""
-          case "$DEPLOYMENT_ENVIRONMENT" in
-            dev) PLATFORM_RESOURCE_GROUP="$PLATFORM_RESOURCE_GROUP_DEV"; FRONT_DOOR_PROFILE="$FRONT_DOOR_PROFILE_DEV" ;;
-            staging) PLATFORM_RESOURCE_GROUP="$PLATFORM_RESOURCE_GROUP_STAGING"; FRONT_DOOR_PROFILE="$FRONT_DOOR_PROFILE_STAGING" ;;
-            prod) PLATFORM_RESOURCE_GROUP="$PLATFORM_RESOURCE_GROUP_PROD"; FRONT_DOOR_PROFILE="$FRONT_DOOR_PROFILE_PROD" ;;
-            *) CONFIG_OK=false ;;
-          esac
-          [ -n "${PLATFORM_RESOURCE_GROUP:-}" ] || CONFIG_OK=false
-          [ -n "${FRONT_DOOR_PROFILE:-}" ] || CONFIG_OK=false
-          if [ "$CONFIG_OK" != "true" ]; then
-            MISSING_INPUTS=""
-            [ -n "$PLATFORM_RESOURCE_GROUP" ] || MISSING_INPUTS="platform resource group"
-            [ -n "$FRONT_DOOR_PROFILE" ] || MISSING_INPUTS="${MISSING_INPUTS:+$MISSING_INPUTS, }Front Door profile"
-            [ "$DEPLOYMENT_ENVIRONMENT" = "dev" ] || [ "$DEPLOYMENT_ENVIRONMENT" = "staging" ] || [ "$DEPLOYMENT_ENVIRONMENT" = "prod" ] ||
-              MISSING_INPUTS="${MISSING_INPUTS:+$MISSING_INPUTS, }supported deployment environment"
-            jq --arg missing "$MISSING_INPUTS" \
-              '.stage = "Preflight" | .status = "Failed" |
-               .diagnostics = [{code:"MISSING_PLATFORM_CONFIGURATION",message:("Missing or invalid " + $missing)}]' \
-              publication-result.json > publication-result.tmp
-            mv publication-result.tmp publication-result.json
-            exit 1
-          fi
-          {
-            echo "PLATFORM_RESOURCE_GROUP=$PLATFORM_RESOURCE_GROUP"
-            echo "FRONT_DOOR_PROFILE=$FRONT_DOOR_PROFILE"
-          } >> "$GITHUB_ENV"
+        run: ./scripts/pipeline/front-door/resolve-platform-configuration.sh
 
       - name: Validate Publication Inputs
         id: preflight
-        run: |
-          set +e
-          SUBSCRIPTION_ID="$(az account show --query id -o tsv 2>/dev/null)"
-          PREFLIGHT_OK=true
-          test -n "$SUBSCRIPTION_ID" || PREFLIGHT_OK=false
-          test -n "$INSTANCE_ID" || PREFLIGHT_OK=false
-          test -n "$AZURE_RESOURCE_GROUP" || PREFLIGHT_OK=false
-          test -n "$STATIC_WEB_APP" || PREFLIGHT_OK=false
-          test -n "$STATIC_WEB_APP_DEFAULT_HOSTNAME" || PREFLIGHT_OK=false
-          test -n "$STATIC_WEB_APP_ORIGIN_HOSTNAME" || PREFLIGHT_OK=false
-          test -n "$STORAGE_ACCOUNT" || PREFLIGHT_OK=false
-          test -n "$PLATFORM_RESOURCE_GROUP" || PREFLIGHT_OK=false
-          test -n "$FRONT_DOOR_PROFILE" || PREFLIGHT_OK=false
-          test "$AZURE_RESOURCE_GROUP" != "$PLATFORM_RESOURCE_GROUP" || PREFLIGHT_OK=false
-          case "$STATIC_WEB_APP_ORIGIN_HOSTNAME" in
-            *.azurestaticapps.net) ;;
-            *) PREFLIGHT_OK=false ;;
-          esac
-          if [ "$PREFLIGHT_OK" != "true" ]; then
-            jq '.stage = "Preflight" | .status = "Failed" |
-              .diagnostics = [{code:"PREFLIGHT_FAILED",message:"Required publication inputs are missing or inconsistent"}]' \
-              publication-result.json > publication-result.tmp
-            mv publication-result.tmp publication-result.json
-            exit 1
-          fi
-          jq --arg stage "Preflight" --arg subscriptionId "$SUBSCRIPTION_ID" \
-            '.stage = $stage | .diagnostics = [{code:"PREFLIGHT_OK",message:("Inputs validated for subscription " + $subscriptionId)}]' \
-            publication-result.json > publication-result.tmp
-          mv publication-result.tmp publication-result.json
-          echo "SUBSCRIPTION_ID=$SUBSCRIPTION_ID" >> "$GITHUB_ENV"
+        run: ./scripts/pipeline/front-door/validate-publication-inputs.sh
 
       - name: Register Instance Front Door Route
         id: register_route
-        run: |
-          set +e
-          ./scripts/instance-route.sh register \
-            --instance-id "$INSTANCE_ID" \
-            --instance-resource-group "$AZURE_RESOURCE_GROUP" \
-            --static-web-app-name "$STATIC_WEB_APP" \
-            --platform-resource-group "$PLATFORM_RESOURCE_GROUP" \
-            --front-door-profile "$FRONT_DOOR_PROFILE" \
-            --subscription-id "$(az account show --query id -o tsv)" \
-            --environment "$DEPLOYMENT_ENVIRONMENT" \
-            --origin-hostname "$STATIC_WEB_APP_ORIGIN_HOSTNAME" \
-            --forwarding-config-file route-forwarding-gateway.json \
-            > route-registration.json
-          REGISTER_RC=$?
-          set -e
-          # The lifecycle CLI normally emits a schema-valid envelope even on
-          # failure.  Keep a sanitized fallback artifact if it exits before
-          # producing one, rather than losing the failure evidence or exposing
-          # command output in the publication artifact.
-          if [ ! -s route-registration.json ] || ! jq -e \
-            'type == "object" and (.status | type == "string") and
-             (has("instance") and has("route") and has("diagnostics"))' \
-            route-registration.json >/dev/null 2>&1; then
-            printf '%s\n' '{"schemaVersion":"1.0","action":"register","status":"Failed","operationId":"unknown","instance":null,"route":null,"diagnostics":[{"code":"REGISTRATION_NO_RESULT","message":"Registration command failed without a valid result envelope"}]}' > route-registration.json
-          fi
-          ENDPOINT_URL="$(jq -r '.route.url // empty' route-registration.json 2>/dev/null || true)"
-          REGISTRATION_STATUS="$(jq -r '.status // empty' route-registration.json 2>/dev/null || true)"
-          if [ "$REGISTER_RC" -ne 0 ] || ! jq -e \
-            --arg url "$ENDPOINT_URL" \
-            '.status as $status |
-             ($status == "Succeeded" or $status == "NoChange" or $status == "Degraded") and
-             ($url | test("^https://[^[:space:]]+$")) and
-             (.route.url == $url)' route-registration.json >/dev/null 2>&1; then
-            jq --arg stage "Register" --arg file "route-registration.json" \
-              --arg message "Registration failed or did not return an allowed HTTPS route URL" \
-              '.stage = $stage | .status = "Failed" | .registrationResultFile = $file |
-               .diagnostics = [{code:"REGISTRATION_FAILED",message:$message}]' \
-              publication-result.json > publication-result.tmp
-            mv publication-result.tmp publication-result.json
-            exit 1
-          fi
-          jq --arg stage "Register" --arg file "route-registration.json" --arg url "$ENDPOINT_URL" \
-            --arg status "$REGISTRATION_STATUS" \
-            '.stage = $stage | .publishedUrl = $url | .registrationResultFile = $file |
-             .diagnostics = [{code:("REGISTRATION_" + $status),message:("Route registration returned " + $status)}]' \
-            publication-result.json > publication-result.tmp
-          mv publication-result.tmp publication-result.json
-          echo "endpointUrl=$ENDPOINT_URL" >> "$GITHUB_OUTPUT"
+        run: ./scripts/pipeline/front-door/register-instance-route.sh
 
       - name: Configure Front Door Table CORS
-        run: |
-          set +e
-          ./scripts/cors-add-origin.sh \
-            --storage-account-name "$STORAGE_ACCOUNT" \
-            --resource-group "$AZURE_RESOURCE_GROUP" \
-            --subscription-id "$SUBSCRIPTION_ID" \
-            --origin "${{ steps.register_route.outputs.endpointUrl }}" >/dev/null
-          CORS_RC=$?
-          set -e
-          if [ "$CORS_RC" -ne 0 ]; then
-            jq '.stage = "Cors" | .status = "Failed" |
-              .diagnostics = [{code:"CORS_ALIGNMENT_FAILED",message:"Published origin could not be aligned with Table Storage CORS"}]' \
-              publication-result.json > publication-result.tmp
-            mv publication-result.tmp publication-result.json
-            exit "$CORS_RC"
-          fi
-          jq '.stage = "Cors" | .diagnostics = [{code:"CORS_ALIGNMENT_SUCCEEDED",message:"Published origin aligned with Table Storage CORS"}]' \
-            publication-result.json > publication-result.tmp
-          mv publication-result.tmp publication-result.json
+        env:
+          ENDPOINT_URL: ${{ steps.register_route.outputs.endpointUrl }}
+        run: ./scripts/pipeline/front-door/configure-table-cors.sh
 
       - name: Verify Published Front Door Route
-        run: |
-          set +e
-          ATTEMPT=1
-          MAX_ATTEMPTS=20
-          VERIFY_DEADLINE=$((SECONDS + 600))
-          VERIFIED=false
-          while [ "$ATTEMPT" -le "$MAX_ATTEMPTS" ] && [ "$SECONDS" -lt "$VERIFY_DEADLINE" ]; do
-            TMP_VERIFICATION="route-verification.json.tmp"
-            ./scripts/instance-route.sh verify \
-              --instance-id "$INSTANCE_ID" \
-              --instance-resource-group "$AZURE_RESOURCE_GROUP" \
-              --static-web-app-name "$STATIC_WEB_APP" \
-              --platform-resource-group "$PLATFORM_RESOURCE_GROUP" \
-              --front-door-profile "$FRONT_DOOR_PROFILE" \
-              --subscription-id "$SUBSCRIPTION_ID" \
-              --expected-origin-hostname "$STATIC_WEB_APP_ORIGIN_HOSTNAME" \
-              > "$TMP_VERIFICATION"
-            VERIFY_RC=$?
-            if [ -s "$TMP_VERIFICATION" ]; then
-              mv "$TMP_VERIFICATION" route-verification.json
-            else
-              printf '%s\n' '{"status":"Failed","diagnostics":[{"code":"EMPTY_VERIFICATION","message":"Verification produced no result"}]}' > route-verification.json
-            fi
-            jq --arg stage "Verify" --arg file "route-verification.json" \
-              '.stage = $stage | .verificationResultFile = $file' \
-              publication-result.json > publication-result.tmp
-            mv publication-result.tmp publication-result.json
-            if [ "$VERIFY_RC" -eq 0 ] && jq -e '.status == "Succeeded"' route-verification.json >/dev/null 2>&1; then
-              VERIFIED=true
-              break
-            fi
-            VERIFY_STATUS="$(jq -r '.status // "Invalid"' route-verification.json 2>/dev/null || printf '%s' "Invalid")"
-            jq -r --arg attempt "$ATTEMPT" \
-              '.diagnostics[]? | "::warning::Front Door verification attempt \($attempt): \(.code): \(.message)"' \
-              route-verification.json 2>/dev/null || \
-              echo "::warning::Front Door verification attempt $ATTEMPT returned an invalid result"
-            if [ "$VERIFY_STATUS" = "Failed" ] || [ "$ATTEMPT" -eq "$MAX_ATTEMPTS" ] || [ "$SECONDS" -ge "$VERIFY_DEADLINE" ]; then
-              break
-            fi
-            case "$ATTEMPT" in
-              1) sleep 5 ;;
-              2) sleep 10 ;;
-              3) sleep 20 ;;
-              4) sleep 30 ;;
-              *) sleep 60 ;;
-            esac
-            ATTEMPT=$((ATTEMPT + 1))
-          done
-          if [ "$VERIFIED" != "true" ]; then
-            VERIFY_STATUS="$(jq -r '.status // "Invalid"' route-verification.json 2>/dev/null || printf '%s' "Invalid")"
-            FINAL_DIAGNOSTICS="$(jq -r '[.diagnostics[]? | (.code + ": " + .message)] | join("; ")' route-verification.json 2>/dev/null || true)"
-            echo "::error::Front Door verification failed after $ATTEMPT attempt(s) with status $VERIFY_STATUS: ${FINAL_DIAGNOSTICS:-No valid diagnostics were returned}"
-            jq --arg attempts "$ATTEMPT" --arg verifyStatus "$VERIFY_STATUS" \
-              '.status = "Failed" | .diagnostics = [{code:"VERIFICATION_FAILED",message:("Verification returned " + $verifyStatus + " and did not return Succeeded within the bounded retry window (attempt " + $attempts + ")")}]' \
-              publication-result.json > publication-result.tmp
-            mv publication-result.tmp publication-result.json
-            exit 1
-          fi
+        run: ./scripts/pipeline/front-door/verify-published-route.sh
 
       - name: Report Published Route
         id: publish_result
-        run: |
-          ENDPOINT_URL=$(jq -r '.route.url // empty' route-registration.json 2>/dev/null || true)
-          if [ -z "$ENDPOINT_URL" ]; then
-            jq '.stage = "Complete" | .status = "Failed" |
-              .diagnostics = [{code:"MISSING_ENDPOINT_URL",message:"Failed to extract published endpoint URL from route registration result"}]' \
-              publication-result.json > publication-result.tmp
-            mv publication-result.tmp publication-result.json
-            echo "❌ Error: Could not extract endpoint URL from route registration result"
-            exit 1
-          fi
-          jq --arg url "$ENDPOINT_URL" \
-            '.stage = "Complete" | .status = "Succeeded" | .publishedUrl = $url |
-             .diagnostics = [{code:"PUBLICATION_SUCCEEDED",message:"Front Door route verified successfully"}]' \
-            publication-result.json > publication-result.tmp
-          mv publication-result.tmp publication-result.json
-          echo "publishedUrl=$ENDPOINT_URL" >> "$GITHUB_OUTPUT"
-          echo "Published Front Door URL: $ENDPOINT_URL" >> "$GITHUB_STEP_SUMMARY"
+        run: ./scripts/pipeline/front-door/report-published-route.sh
 
       - name: Retain Route Registration Artifact
         if: always()
@@ -653,11 +266,9 @@ jobs:
     steps:
       - name: Determine PR Instance
         id: pr_instance
-        run: |
-          INSTANCE_ID="pr${{ github.event.pull_request.number }}"
-          RESOURCE_GROUP="rg-gamevault-${INSTANCE_ID}"
-          echo "instanceId=$INSTANCE_ID" >> $GITHUB_OUTPUT
-          echo "resourceGroup=$RESOURCE_GROUP" >> $GITHUB_OUTPUT
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: ./scripts/pipeline/pull-request/determine-instance.sh
 
       - name: Azure Login
         uses: azure/login@v2
@@ -666,31 +277,9 @@ jobs:
 
       - name: Find and Close Staging Environment
         id: find_swa
-        run: |
-          RESOURCE_GROUP="${{ steps.pr_instance.outputs.resourceGroup }}"
-          if [ -z "$RESOURCE_GROUP" ]; then
-            echo "No resource group determined. Skipping."
-            echo "found=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          if az group exists --name "$RESOURCE_GROUP" | grep -q "true"; then
-            SWA_NAME=$(az staticwebapp list --resource-group $RESOURCE_GROUP --query "[0].name" -o tsv 2>/dev/null || echo "")
-
-            if [ -n "$SWA_NAME" ]; then
-              echo "Found Static Web App: $SWA_NAME"
-              TOKEN=$(az staticwebapp secrets list --name $SWA_NAME --resource-group $RESOURCE_GROUP --query "properties.apiKey" -o tsv)
-              echo "::add-mask::$TOKEN"
-              echo "swa_token=$TOKEN" >> $GITHUB_OUTPUT
-              echo "found=true" >> $GITHUB_OUTPUT
-            else
-              echo "No Static Web App found in resource group"
-              echo "found=false" >> $GITHUB_OUTPUT
-            fi
-          else
-            echo "Resource group not found, skipping"
-            echo "found=false" >> $GITHUB_OUTPUT
-          fi
+        env:
+          RESOURCE_GROUP: ${{ steps.pr_instance.outputs.resourceGroup }}
+        run: ./scripts/pipeline/pull-request/find-static-web-app.sh
 
       - name: Close Pull Request
         if: steps.find_swa.outputs.found == 'true'
@@ -702,11 +291,6 @@ jobs:
 
       - name: Delete PR Resource Group
         if: steps.pr_instance.outputs.resourceGroup != ''
-        run: |
-          RESOURCE_GROUP="${{ steps.pr_instance.outputs.resourceGroup }}"
-          if az group exists --name "$RESOURCE_GROUP" | grep -q "true"; then
-            echo "Deleting resource group $RESOURCE_GROUP..."
-            az group delete --name "$RESOURCE_GROUP" --yes --no-wait
-          else
-            echo "Resource group $RESOURCE_GROUP already deleted."
-          fi
+        env:
+          RESOURCE_GROUP: ${{ steps.pr_instance.outputs.resourceGroup }}
+        run: ./scripts/pipeline/pull-request/delete-resource-group.sh
