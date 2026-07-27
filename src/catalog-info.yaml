@@ -2,19 +2,26 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: gamevault-tracker-azure-src
-  description: The source code for the GameVault Tracker Azure application.
+  description: React and TypeScript frontend for GameVault Tracker, built with Vite and deployed to an isolated Azure Static Web App for each instance.
   annotations:
     github.com/project-slug: matteoemili/gamevault-tracker-azure
-    backstage.io/techdocs-ref: dir:.
   tags:
     - react
+    - typescript
+    - vite
     - azure
+    - static-web-apps
+    - table-storage
+    - multi-instance
   links:
     - url: https://github.com/matteoemili/gamevault-tracker-azure
       title: Source Code
       icon: github
 spec:
   type: website
-  system: gamevault-tracker-azure # Optional: groups components together
-  lifecycle: production # e.g., experimental, production, deprecated
-  owner: acme # Links to a Group or User entity
+  system: gamevault-tracker-azure
+  lifecycle: production
+  owner: user:default/matteoemili
+  dependsOn:
+    - resource:default/gamevault-tracker-azure-static-web-app
+    - resource:default/gamevault-tracker-azure-table-storage

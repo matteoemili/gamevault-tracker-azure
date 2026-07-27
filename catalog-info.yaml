@@ -2,20 +2,22 @@ apiVersion: backstage.io/v1alpha1
 kind: System
 metadata:
   name: gamevault-tracker-azure
-  description: A game collection management system originally vibe-coded in GitHub Spark and subsequently converted into a real Azure application.
+  description: Multi-instance game collection management system with isolated Azure Static Web Apps and Azure Table Storage per instance, published through a shared Azure Front Door platform.
   annotations:
     github.com/project-slug: matteoemili/gamevault-tracker-azure
-    backstage.io/techdocs-ref: dir:.
   tags:
+    - multi-instance
     - react
     - azure
+    - azure-front-door
+    - azure-table-storage
   links:
     - url: https://github.com/matteoemili/gamevault-tracker-azure
       title: Source Code
       icon: github
 spec:
-  lifecycle: production # e.g., experimental, production, deprecated
-  owner: acme # Links to a Group or User entity
+  lifecycle: production
+  owner: user:default/matteoemili
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Location
@@ -28,4 +30,12 @@ spec:
   targets:
     - ./src/catalog-info.yaml
     - ./infra/catalog-info.yaml
-
+---
+apiVersion: backstage.io/v1alpha1
+kind: User
+metadata:
+  name: matteoemili
+  annotations:
+    github.com/user-login: matteoemili
+spec:
+  memberOf: []
