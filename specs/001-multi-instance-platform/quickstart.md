@@ -102,10 +102,14 @@ curl --fail --silent --show-error --location "$INSTANCE_A_URL/" >/dev/null
   --static-web-app-name "$INSTANCE_A_SWA" \
   --platform-resource-group "$PLATFORM_RG" \
   --front-door-profile "$PLATFORM_PROFILE" \
-  --subscription-id "$AZURE_SUBSCRIPTION_ID" | jq .
+  --subscription-id "$AZURE_SUBSCRIPTION_ID" \
+  --expected-origin-hostname "$INSTANCE_A_ORIGIN_HOSTNAME" | jq .
 ```
 
-Expected: the output contains a stable Azure-provided `https://*.azurefd.net` URL, HTTPS succeeds, and all route association checks pass. Repeating registration returns `NoChange` with the same URL.
+Expected: the output contains a stable Azure-provided `https://*.azurefd.net`
+URL and all Azure Front Door control-plane property checks pass. Repeating
+registration returns `NoChange` with the same URL. Use `secure-routing.sh` for
+an optional live data-plane check after control-plane validation.
 
 ### Registration recovery and origin updates
 

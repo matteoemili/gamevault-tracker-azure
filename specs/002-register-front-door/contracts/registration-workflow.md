@@ -28,7 +28,9 @@ The workflow MUST execute these stages in order:
 2. Run the existing `instance-route.sh register` command and capture `route-registration.json`.
 3. Accept registration statuses `Succeeded`, `NoChange`, or `Degraded` only when a non-null HTTPS route URL is present; a degraded route still requires verification.
 4. Add the published URL to instance Table Storage CORS idempotently.
-5. Poll the existing `instance-route.sh verify` command with bounded backoff, replacing `route-verification.json` on each attempt.
+5. Run the existing `instance-route.sh verify` command once with the deployed
+   Static Web App hostname. It deterministically validates Azure Front Door
+   control-plane properties and writes `route-verification.json`.
 6. Accept only verification status `Succeeded` as publication success.
 7. Publish the verified URL as a job output and in the workflow summary.
 8. Upload all available sanitized result files under `if: always()`.
@@ -48,7 +50,7 @@ Artifact name: `route-registration-<instance-id>`.
 |---|---|
 | `publication-result.json` | Always initialized before preflight and always retained |
 | `route-registration.json` | Retained when registration is invoked, including schema-valid CLI failures |
-| `route-verification.json` | Retained when any verification attempt occurs; contains the final attempt |
+| `route-verification.json` | Retained when verification occurs; contains the deterministic control-plane result |
 | `route-forwarding-gateway.json` | Retained when generated; not applied by this feature |
 
 All files MUST exclude account keys, SAS values, deployment credentials, bearer tokens, and unmasked secret-bearing command output.
@@ -61,7 +63,7 @@ All files MUST exclude account keys, SAS values, deployment credentials, bearer 
 | Preflight | Failed | Publication result identifies missing or invalid configuration; no route mutation |
 | Registration | Failed | Registration envelope and publication result retained; sibling routes unchanged |
 | CORS alignment | Failed | Registration result retained; deployment not reported as published |
-| Verification timeout/failure | Failed | Final verification result retained; discovered route URL retained for diagnosis |
+| Verification failure | Failed | Verification result retained; discovered route URL retained for diagnosis |
 | Artifact upload | Warning only when files are partially absent | Available diagnostic files still uploaded |
 
 ## Validation Contract

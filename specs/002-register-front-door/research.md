@@ -34,11 +34,18 @@
 
 ## Propagation and Verification
 
-**Decision**: Poll the existing read-only verification command with bounded backoff for up to the feature's 10-minute publication target; accept only `Succeeded` as deployment success and retain the final result.
+**Decision**: Run the existing read-only verification command once against the
+Azure control plane; accept only `Succeeded` as deployment success and retain
+the deterministic result.
 
-**Rationale**: Front Door propagation is asynchronous. A single immediate request creates false failures, while arbitrary sleep delays every deployment and provides no health evidence.
+**Rationale**: Front Door data-plane propagation is asynchronous, so live
+requests create false failures. Validating the deployed endpoint, route, origin
+group, and origin configuration is deterministic and proves the intended
+control-plane graph without arbitrary delay.
 
-**Alternatives considered**: One verification attempt, fixed sleep, or accepting `Degraded`. These respectively create flaky deployments, waste time, or report an unproven route as complete.
+**Alternatives considered**: Live probing with retries, fixed sleep, or
+accepting `Degraded`. These respectively create flaky deployments, waste time,
+or report an invalid route graph as complete.
 
 ## CORS Ownership
 

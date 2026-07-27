@@ -23,7 +23,8 @@
 #
 # `register` validates the instance origin, runs Azure validation and what-if,
 # then deploys only that instance's deterministic Front Door resource graph.
-# `verify` performs read-only association and endpoint checks. `unregister`
+# `verify` performs read-only Azure control-plane property validation.
+# `unregister`
 # validates ownership tags before deleting only the matching route graph.
 #
 # Bash 3.2 compatible. Writes human-readable progress to stderr and exactly
@@ -57,7 +58,7 @@ Usage: instance-route.sh <register|verify|status|unregister> [options]
   --environment <dev|staging|prod>      (register only)
   --base-name <name>                    (register only; default: gvt)
   --origin-hostname <hostname>   (register only; optional override)
-  --expected-origin-hostname <hostname> (verify only; optional CI expectation)
+  --expected-origin-hostname <hostname> (required for verify)
   --forwarding-config-file <path>       (register only; optional)
   --confirm                      (required for unregister)
 USAGE
@@ -189,6 +190,10 @@ if [ -n "$EXPECTED_ORIGIN_HOSTNAME" ]; then
     *.azurestaticapps.net) ;;
     *) fail_route "$ACTION" "$OP_ID" "INVALID_ORIGIN_HOSTNAME" "expected origin hostname must end in .azurestaticapps.net" ;;
   esac
+fi
+
+if [ "$ACTION" = "verify" ] && [ -z "$EXPECTED_ORIGIN_HOSTNAME" ]; then
+  fail_route "$ACTION" "$OP_ID" "MISSING_REQUIRED_OPTION" "missing value for required option: --expected-origin-hostname"
 fi
 
 SCRATCH_DIR="$(mktemp -d)"
@@ -500,30 +505,60 @@ cmd_verify() {
   if [ -z "$endpoint_json" ] || [ "$endpoint_json" = "null" ]; then
     fail_route "$ACTION" "$OP_ID" "ROUTE_NOT_FOUND" "No endpoint is registered for instance '$INSTANCE_ID'"
   fi
-  route_json=$(route_object_from_azure "$endpoint_json") || \
+
+  endpoint_name=$(echo "$endpoint_json" | jq -r '.name // empty')
+  endpoint_hostname=$(echo "$endpoint_json" | jq -r '.hostName // empty')
+  [ -n "$endpoint_name" ] && [ -n "$endpoint_hostname" ] || \
+    fail_route "$ACTION" "$OP_ID" "ENDPOINT_NOT_FOUND" "The registered endpoint could not be identified"
+  endpoint_json=$(az afd endpoint show \
+    --resource-group "$PLATFORM_RESOURCE_GROUP" \
+    --profile-name "$FRONT_DOOR_PROFILE" \
+    --endpoint-name "$endpoint_name" \
+    --subscription "$SUBSCRIPTION_ID" -o json 2>/dev/null) || \
+    fail_route "$ACTION" "$OP_ID" "ENDPOINT_NOT_FOUND" "The registered endpoint could not be read"
+
+  route_name="route-${INSTANCE_ID}"
+  route_azure_json=$(az afd route show \
+    --resource-group "$PLATFORM_RESOURCE_GROUP" \
+    --profile-name "$FRONT_DOOR_PROFILE" \
+    --endpoint-name "$endpoint_name" \
+    --route-name "$route_name" \
+    --subscription "$SUBSCRIPTION_ID" -o json 2>/dev/null) || \
     fail_route "$ACTION" "$OP_ID" "ROUTE_NOT_FOUND" "No matching route is registered for instance '$INSTANCE_ID'"
 
-  endpoint_hostname=$(echo "$route_json" | jq -r '.endpointHostName')
-  provisioning_state=$(echo "$route_json" | jq -r '.provisioningState')
+  origin_group_name="og-${INSTANCE_ID}"
+  origin_group_json=$(az afd origin-group show \
+    --resource-group "$PLATFORM_RESOURCE_GROUP" \
+    --profile-name "$FRONT_DOOR_PROFILE" \
+    --origin-group-name "$origin_group_name" \
+    --subscription "$SUBSCRIPTION_ID" -o json 2>/dev/null) || \
+    fail_route "$ACTION" "$OP_ID" "ORIGIN_GROUP_NOT_FOUND" "The expected origin group could not be read"
+
+  origin_name="origin-${INSTANCE_ID}"
   origin_json=$(az afd origin show \
     --resource-group "$PLATFORM_RESOURCE_GROUP" \
     --profile-name "$FRONT_DOOR_PROFILE" \
-    --origin-group-name "og-${INSTANCE_ID}" \
-    --origin-name "origin-${INSTANCE_ID}" \
-    --subscription "$SUBSCRIPTION_ID" -o json 2>/dev/null) || origin_json='{}'
-  origin_host_header=$(echo "$origin_json" | jq -r '.originHostHeader // empty')
-  expected_origin_hostname="$EXPECTED_ORIGIN_HOSTNAME"
-  if [ -z "$expected_origin_hostname" ]; then
-    expected_origin_hostname="$ORIGIN_HOSTNAME"
-  fi
-  if [ -z "$expected_origin_hostname" ]; then
-    # Retain the legacy behavior for callers that do not yet supply the
-    # deployed hostname explicitly.
-    expected_origin_hostname="$origin_host_header"
-  fi
-  if [ -z "$ORIGIN_HOSTNAME" ]; then
-    ORIGIN_HOSTNAME="$origin_host_header"
-  fi
+    --origin-group-name "$origin_group_name" \
+    --origin-name "$origin_name" \
+    --subscription "$SUBSCRIPTION_ID" -o json 2>/dev/null) || \
+    fail_route "$ACTION" "$OP_ID" "ORIGIN_NOT_FOUND" "The expected application origin could not be read"
+
+  route_json=$(echo "$route_azure_json" | jq \
+    --arg endpointName "$endpoint_name" \
+    --arg endpointHostName "$endpoint_hostname" \
+    --arg originGroupName "$origin_group_name" \
+    --arg originName "$origin_name" \
+    --arg routeName "$route_name" \
+    '{
+      endpointName: $endpointName,
+      endpointHostName: $endpointHostName,
+      url: ("https://" + $endpointHostName),
+      originGroupName: $originGroupName,
+      originName: $originName,
+      routeName: $routeName,
+      provisioningState: (.provisioningState // "Failed")
+    }')
+  ORIGIN_HOSTNAME="$EXPECTED_ORIGIN_HOSTNAME"
 
   diagnostics='[]'
   failures=0
@@ -531,14 +566,47 @@ cmd_verify() {
     diagnostics=$(echo "$diagnostics" | jq --arg code "$1" --arg message "$2" '. + [{code: $code, message: $message}]')
     failures=$((failures + 1))
   }
-  [ "$provisioning_state" = "Succeeded" ] || add_failure "ROUTE_NOT_PROVISIONED" "Route provisioning state is '$provisioning_state'"
-  [ -n "$origin_host_header" ] || add_failure "ORIGIN_NOT_FOUND" "The expected application origin could not be read"
-  [ -z "$expected_origin_hostname" ] || [ "$origin_host_header" = "$expected_origin_hostname" ] || add_failure "ORIGIN_HOST_HEADER_MISMATCH" "Origin host header does not match the expected Static Web App hostname"
+  expected_origin_group_id="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${PLATFORM_RESOURCE_GROUP}/providers/Microsoft.Cdn/profiles/${FRONT_DOOR_PROFILE}/originGroups/${origin_group_name}"
+  expected_origin_id="${expected_origin_group_id}/origins/${origin_name}"
 
-  http_status=$(curl -s -o /dev/null -w '%{http_code}' --max-redirs 0 --max-time 15 "http://${endpoint_hostname}/" 2>/dev/null)
-  case "$http_status" in 301|302|307|308) ;; *) add_failure "HTTPS_REDIRECT_MISSING" "Expected an HTTP redirect, received status ${http_status:-<none>}" ;; esac
-  https_status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "https://${endpoint_hostname}/" 2>/dev/null)
-  case "$https_status" in 2*|3*) ;; *) add_failure "ENDPOINT_RESPONSE_UNHEALTHY" "Expected a 2xx/3xx endpoint response, received status ${https_status:-<none>}" ;; esac
+  echo "$endpoint_json" | jq -e \
+    '(.enabledState == "Enabled") and (.provisioningState == "Succeeded")' >/dev/null || \
+    add_failure "ENDPOINT_CONFIGURATION_MISMATCH" "Endpoint must be enabled and successfully provisioned"
+  echo "$route_azure_json" | jq -e \
+    --arg originGroupId "$expected_origin_group_id" \
+    '(.provisioningState == "Succeeded") and
+     (.enabledState == "Enabled") and
+     (.forwardingProtocol == "HttpsOnly") and
+     (.httpsRedirect == "Enabled") and
+     (.linkToDefaultDomain == "Enabled") and
+     ((.supportedProtocols | sort) == ["Http", "Https"]) and
+     ((.patternsToMatch | sort) == ["/*"]) and
+     ((.originGroup.id // "" | ascii_downcase) == ($originGroupId | ascii_downcase))' >/dev/null || \
+    add_failure "ROUTE_CONFIGURATION_MISMATCH" "Route does not match the required Front Door configuration"
+  echo "$origin_group_json" | jq -e \
+    '(.provisioningState == "Succeeded") and
+     (.loadBalancingSettings.sampleSize == 4) and
+     (.loadBalancingSettings.successfulSamplesRequired == 3) and
+     (.loadBalancingSettings.additionalLatencyInMilliseconds == 50) and
+     (.healthProbeSettings.probePath == "/") and
+     (.healthProbeSettings.probeRequestType == "HEAD") and
+     (.healthProbeSettings.probeProtocol == "Https") and
+     (.healthProbeSettings.probeIntervalInSeconds == 60)' >/dev/null || \
+    add_failure "ORIGIN_GROUP_CONFIGURATION_MISMATCH" "Origin group does not match the required Front Door configuration"
+  echo "$origin_json" | jq -e \
+    --arg expectedOrigin "$EXPECTED_ORIGIN_HOSTNAME" \
+    --arg originId "$expected_origin_id" \
+    '(.provisioningState == "Succeeded") and
+     (.enabledState == "Enabled") and
+     (.hostName == $expectedOrigin) and
+     (.originHostHeader == $expectedOrigin) and
+     (.httpPort == 80) and
+     (.httpsPort == 443) and
+     (.priority == 1) and
+     (.weight == 1000) and
+     (.enforceCertificateNameCheck == true) and
+     ((.id // "" | ascii_downcase) == ($originId | ascii_downcase))' >/dev/null || \
+    add_failure "ORIGIN_CONFIGURATION_MISMATCH" "Origin does not match the expected Static Web App and Front Door configuration"
 
   instance_json=$(instance_object)
   if [ "$failures" -eq 0 ]; then

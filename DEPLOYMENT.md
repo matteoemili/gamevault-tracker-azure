@@ -400,8 +400,8 @@ upload succeed:
 2. Register/update the instance with `scripts/instance-route.sh register`.
 3. Add the verified route origin to Table Storage CORS with
    `scripts/cors-add-origin.sh` (idempotently).
-4. Poll `scripts/instance-route.sh verify` with bounded backoff; only
-   `Succeeded` completes publication.
+4. Run `scripts/instance-route.sh verify` once to validate the deployed Azure
+   Front Door control-plane properties; only `Succeeded` completes publication.
 5. Report the HTTPS Front Door URL and retain sanitized results.
 
 Registration is serialized per environment/profile with
@@ -421,8 +421,8 @@ the workflow workspace root:
 - `publication-result.json` — always initialized and retained;
 - `route-registration.json` — registration envelope, including valid CLI
   failures;
-- `route-verification.json` — final verification attempt, when verification
-  ran;
+- `route-verification.json` — deterministic control-plane verification result,
+  when verification ran;
 - `route-forwarding-gateway.json` — generated forwarding-gateway metadata,
   when available.
 

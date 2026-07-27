@@ -21,7 +21,9 @@ As a platform operator, I can deploy a new GameVault instance through the existi
 **Acceptance Scenarios**:
 
 1. **Given** the shared entry platform is available and has capacity, **When** a new instance and its application are deployed successfully, **Then** the workflow registers that instance and reports its unique published address.
-2. **Given** registration succeeds, **When** the workflow verifies the published address, **Then** the address securely serves the newly deployed instance and does not serve another instance.
+2. **Given** registration succeeds, **When** the workflow verifies the deployed
+   Front Door configuration, **Then** the route is securely configured for the
+   newly deployed instance and does not point to another instance.
 3. **Given** the application deployment has not completed successfully, **When** the workflow evaluates registration eligibility, **Then** registration is not attempted and no route is created for the incomplete instance.
 
 ---
@@ -59,7 +61,8 @@ As a platform operator, I can distinguish application deployment failures from s
 ### Edge Cases
 
 - A new instance origin exists but is not yet ready when registration begins.
-- Registration succeeds while public route propagation is still in progress.
+- Registration succeeds while public route propagation is still in progress;
+  control-plane verification must not wait for or probe that propagation.
 - The shared entry platform has reached its configured instance capacity.
 - The selected environment does not have a corresponding shared entry platform.
 - The deployment identity can manage the instance but lacks permission to register routes in the shared platform.
@@ -81,7 +84,9 @@ As a platform operator, I can distinguish application deployment failures from s
 - **FR-007**: Redeploying an existing instance with a changed valid origin MUST update only that instance's registration without changing another instance's route.
 - **FR-008**: Workflow runs that can mutate the same instance registration MUST be serialized or rejected safely, while unrelated instance deployments remain independently executable.
 - **FR-009**: The workflow MUST align instance-owned access controls with the new published address before declaring the deployment complete.
-- **FR-010**: The workflow MUST verify the registration association, secure published address, origin reachability, and instance isolation before reporting overall deployment success.
+- **FR-010**: The workflow MUST verify the registration association, secure
+  published-address configuration, expected origin, and instance isolation in
+  the Azure control plane before reporting overall deployment success.
 - **FR-011**: Registration or verification failure MUST cause the overall deployment workflow to report an incomplete outcome rather than a successful published deployment.
 - **FR-012**: Validation, conflict, capacity, authorization, registration, and verification failures MUST produce actionable diagnostics that identify the affected instance and failed stage without exposing credentials.
 - **FR-013**: Registration and verification results MUST be retained for every attempted registration, including failed and partially completed attempts.

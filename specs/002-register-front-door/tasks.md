@@ -38,7 +38,7 @@
 
 ## Phase 3: User Story 1 - Publish Every New Instance Automatically (Priority: P1) MVP
 
-**Goal**: After an application upload succeeds, publish the instance through the existing Front Door lifecycle, align browser storage access, verify it with bounded propagation polling, and report the verified URL.
+**Goal**: After an application upload succeeds, publish the instance through the existing Front Door lifecycle, align browser storage access, validate its deterministic control-plane properties, and report the verified URL.
 
 **Independent Test**: Run `bash tests/infrastructure/run-all.sh`, then execute one approved workflow deployment of a healthy new instance and verify its summary, result artifact, and Front Door URL before running `secure-routing.sh` against that URL.
 
@@ -94,7 +94,7 @@
 
 ### Implementation for User Story 3
 
-- [ ] T020 [US3] Finalize failure branches in `.github/workflows/ci-cd.yml` so missing platform configuration, registration errors, CORS errors, and verification timeout all update `publication-result.json`, fail the deployment, and retain available artifacts without credentials.
+- [ ] T020 [US3] Finalize failure branches in `.github/workflows/ci-cd.yml` so missing platform configuration, registration errors, CORS errors, and verification failures all update `publication-result.json`, fail the deployment, and retain available artifacts without credentials.
 - [ ] T021 [US3] Update `specs/001-multi-instance-platform/contracts/instance-route-cli.md` with the supplied expected-origin verification behavior, ownership validation, statuses, and non-transactional failure semantics.
 
 **Checkpoint**: Every attempted publication has an instance-specific sanitized result; no failure is reported as a successful published deployment; operators can distinguish the failed stage and safely retry.
