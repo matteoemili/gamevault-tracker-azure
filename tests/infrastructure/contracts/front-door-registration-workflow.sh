@@ -9,6 +9,8 @@ set -o pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
 WORKFLOW_FILE="$ROOT_DIR/.github/workflows/ci-cd.yml"
+VERIFY_SCRIPT="$ROOT_DIR/scripts/pipeline/front-door/verify-published-route.sh"
+ROUTE_CLI="$ROOT_DIR/scripts/instance-route.sh"
 
 FAILURES=0
 
@@ -50,10 +52,10 @@ else
   require_text() {
     description="$1"
     pattern="$2"
-    if [ -n "$(line_number "$pattern")" ]; then
+    if grep -F -q -- "$pattern" "$WORKFLOW_FILE" "$ROOT_DIR"/scripts/pipeline/*/*.sh 2>/dev/null; then
       pass "$description"
     else
-      fail "$description (missing: $pattern)"
+      fail "$description (missing from workflow or extracted pipeline scripts: $pattern)"
     fi
   }
 
@@ -82,6 +84,28 @@ else
       pass "$description"
     else
       fail "$description (unexpected between '$start_pattern' and '$end_pattern': $rejected_pattern)"
+    fi
+  }
+
+  require_file_text() {
+    description="$1"
+    file="$2"
+    pattern="$3"
+    if grep -F -q -- "$pattern" "$file"; then
+      pass "$description"
+    else
+      fail "$description (missing from $file: $pattern)"
+    fi
+  }
+
+  require_file_absent() {
+    description="$1"
+    file="$2"
+    pattern="$3"
+    if ! grep -F -q -- "$pattern" "$file"; then
+      pass "$description"
+    else
+      fail "$description (unexpected in $file: $pattern)"
     fi
   }
 
@@ -143,7 +167,9 @@ else
   require_text "registered endpoint is exported" \
     'echo "endpointUrl=$ENDPOINT_URL" >> "$GITHUB_OUTPUT"'
   require_text "CORS uses the registered endpoint" \
-    '--origin "${{ steps.register_route.outputs.endpointUrl }}"'
+    '--origin "$ENDPOINT_URL"'
+  require_text "registered endpoint is passed to the CORS script" \
+    'ENDPOINT_URL: ${{ steps.register_route.outputs.endpointUrl }}'
   require_text "CORS targets the deployed storage account" \
     '--storage-account-name "$STORAGE_ACCOUNT"'
 
@@ -195,19 +221,39 @@ else
   require_text "successful publication updates the publication result" \
     'code:"PUBLICATION_SUCCEEDED"'
 
-  # Verification is deliberately stricter than registration: only a
-  # schema-shaped Succeeded result may complete publication.  Degraded and
-  # Failed statuses, malformed JSON, and empty output must all remain failures.
+  # Verification is deliberately stricter than registration: one deterministic
+  # Azure control-plane validation must return Succeeded. Degraded and Failed
+  # statuses, malformed JSON, and empty output remain failures.
   require_text "verification accepts only Succeeded" \
     "jq -e '.status == \"Succeeded\"' route-verification.json"
   require_text "degraded verification is rejected by the success gate" \
-    'if [ "$VERIFY_RC" -eq 0 ] && jq -e'
-  require_text "failed verification is rejected" \
-    'if [ "$VERIFY_STATUS" = "Failed" ]'
+    'if [ "$VERIFY_RC" -ne 0 ] || ! jq -e'
+  require_text "verification is invoked once" \
+    'VERIFY_RC=$?'
   require_text "malformed verification is treated as invalid" \
     '.status // "Invalid"'
   require_text "empty verification output is retained as a failure" \
     'code":"EMPTY_VERIFICATION"'
+  require_file_absent "verification wrapper has no propagation polling" \
+    "$VERIFY_SCRIPT" 'while ['
+  require_file_absent "verification wrapper has no backoff sleeps" \
+    "$VERIFY_SCRIPT" 'sleep '
+  require_file_absent "verification wrapper has no live curl probes" \
+    "$VERIFY_SCRIPT" 'curl'
+  require_file_text "verification reads the Front Door endpoint control plane" \
+    "$ROUTE_CLI" 'az afd endpoint show'
+  require_file_text "verification reads the Front Door route control plane" \
+    "$ROUTE_CLI" 'az afd route show'
+  require_file_text "verification reads the Front Door origin group control plane" \
+    "$ROUTE_CLI" 'az afd origin-group show'
+  require_file_text "verification reads the Front Door origin control plane" \
+    "$ROUTE_CLI" 'az afd origin show'
+  verify_function="$(sed -n '/^cmd_verify() {/,/^cmd_unregister() {/p' "$ROUTE_CLI")"
+  if printf '%s\n' "$verify_function" | grep -F -q -- 'curl'; then
+    fail "verify command must not make a live curl request"
+  else
+    pass "verify command has no live curl request"
+  fi
 
   # Diagnostic files must survive every failure path.  The artifact upload is
   # allowed to warn about files that were never produced, while preserving all

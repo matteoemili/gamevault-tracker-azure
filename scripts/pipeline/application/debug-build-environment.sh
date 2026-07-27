@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -e
+
+echo "🔍 Environment variables being passed to build:"
+echo "VITE_AZURE_STORAGE_ACCOUNT_NAME: $VITE_AZURE_STORAGE_ACCOUNT_NAME"
+echo "VITE_AZURE_GAMES_TABLE_NAME: $VITE_AZURE_GAMES_TABLE_NAME"
+echo "VITE_AZURE_CATEGORIES_TABLE_NAME: $VITE_AZURE_CATEGORIES_TABLE_NAME"
+echo "SAS Token length: ${#SAS_TOKEN}"

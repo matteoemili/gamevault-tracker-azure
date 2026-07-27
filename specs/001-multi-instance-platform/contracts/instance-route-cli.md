@@ -19,13 +19,11 @@ Common required options:
 
 `register` accepts an optional `--origin-hostname`; when omitted, it resolves the hostname from the named Static Web App and validates resource ownership. `unregister` requires `--confirm` and deletes only deterministically named, matching-tag route resources.
 
-`verify` accepts the optional `--expected-origin-hostname` (also accepted as
-`--expected-origin-host`). The value must end in `.azurestaticapps.net`. The
-expected value is selected in this order: the explicit expected-origin option,
-`--origin-hostname`, or (for compatibility with callers that do not provide
-either) the deployed origin host header. Verification compares the deployed
-origin host header with that value and reports a mismatch as a failed check;
-it does not mutate the route. The option is not required.
+`verify` requires `--expected-origin-hostname` (also accepted as
+`--expected-origin-host`). The value is the deployed Static Web App hostname
+and must end in `.azurestaticapps.net`. Verification compares the deployed
+origin `hostName` and `originHostHeader` with that explicit value; it does not
+mutate the route or make a live HTTP(S) request.
 
 ## Preconditions
 
@@ -71,10 +69,16 @@ it does not mutate the route. The option is not required.
 checks pass, or `status: "Degraded"` when any check fails. It checks:
 
 - route provisioning state is `Succeeded`;
-- the expected application origin can be read;
-- the deployed origin host header matches the selected expected hostname;
-- HTTP requests redirect with status `301`, `302`, `307`, or `308`; and
-- HTTPS requests return a `2xx` or `3xx` status.
+- the endpoint is enabled and successfully provisioned;
+- the route is enabled, associated with the instance origin group, supports
+  HTTP and HTTPS on `/*`, redirects HTTP to HTTPS, enables the default domain,
+  and uses `HttpsOnly` forwarding;
+- the origin group is successfully provisioned and has the Bicep-defined load
+  balancing and HTTPS health-probe settings; and
+- the enabled application origin belongs to that origin group, is successfully
+  provisioned, and has the expected Static Web App value for both `hostName`
+  and `originHostHeader`, plus the Bicep-defined port, priority, weight, and
+  certificate-check defaults.
 
 The implemented checks do not inspect isolation headers or content. A
 degraded verification does not generate the forwarding-gateway configuration.
@@ -101,8 +105,8 @@ Failures use `status: "Failed"` and null data with a redacted diagnostic
 return `Degraded` with `ENDPOINT_VERIFICATION_PENDING` when deployment
 completes but the generated endpoint is not yet reachable. Verification
 check failures use `ROUTE_NOT_PROVISIONED`, `ORIGIN_NOT_FOUND`,
-`ORIGIN_HOST_HEADER_MISMATCH`, `HTTPS_REDIRECT_MISSING`, or
-`ENDPOINT_RESPONSE_UNHEALTHY`.
+`ENDPOINT_CONFIGURATION_MISMATCH`, `ROUTE_CONFIGURATION_MISMATCH`,
+`ORIGIN_GROUP_CONFIGURATION_MISMATCH`, or `ORIGIN_CONFIGURATION_MISMATCH`.
 
 ## Idempotency and Failure Preservation
 

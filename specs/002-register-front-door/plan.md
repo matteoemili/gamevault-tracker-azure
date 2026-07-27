@@ -8,7 +8,7 @@
 
 ## Summary
 
-Complete the existing CI/CD publication path so every successfully deployed GameVault instance is registered and verified through the existing Azure Front Door lifecycle without manual work. Keep the implementation simple: orchestrate `instance-route.sh` and `cors-add-origin.sh` after application deployment, use explicit environment-specific platform inputs, poll verification for bounded Front Door propagation, retain structured results on every path, and surface the verified endpoint URL. Add only focused workflow/CORS contract tests; reuse the existing route schemas and Azure integration suite rather than introducing a service, action, or second registration implementation.
+Complete the existing CI/CD publication path so every successfully deployed GameVault instance is registered and verified through the existing Azure Front Door lifecycle without manual work. Keep the implementation simple: orchestrate `instance-route.sh` and `cors-add-origin.sh` after application deployment, use explicit environment-specific platform inputs, perform one deterministic Azure control-plane property validation, retain structured results on every path, and surface the verified endpoint URL. Add only focused workflow/CORS contract tests; reuse the existing route schemas and Azure integration suite rather than introducing a service, action, or second registration implementation.
 
 ## Technical Context
 
@@ -85,4 +85,3 @@ tests/infrastructure/
 ```
 
 **Structure Decision**: Keep the change inside the repository's current delivery and infrastructure boundaries. GitHub Actions owns ordering and reporting; `instance-route.sh` owns Front Door lifecycle behavior; `cors-add-origin.sh` owns the small post-registration CORS adjustment; existing Bicep remains the instance resource owner. New tests inspect those contracts instead of creating a workflow wrapper or application-layer component.
-

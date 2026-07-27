@@ -309,9 +309,10 @@ Publication is an ordered phase, not a second infrastructure deployment:
 3. Run `scripts/instance-route.sh register`, accepting `Succeeded`, `NoChange`,
    or `Degraded` only when it returns an HTTPS route URL.
 4. Run `scripts/cors-add-origin.sh` for the published Front Door URL.
-5. Poll the read-only `verify` command with bounded backoff (five attempts;
-   5/10/20/30-second waits). Only verification status `Succeeded` is a
-   successful publication.
+5. Run the read-only `verify` command once. It validates the deployed Azure
+   Front Door endpoint, route, origin group, and origin properties through the
+   control plane without waiting for data-plane propagation. Only verification
+   status `Succeeded` is a successful publication.
 6. Write the URL to the job summary/output and upload available sanitized
    result files with `if: always()`.
 

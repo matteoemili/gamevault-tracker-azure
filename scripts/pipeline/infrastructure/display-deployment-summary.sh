@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -e
+
+echo "=================================================="
+echo "🎉 Deployment Complete!"
+echo "=================================================="
+echo ""
+echo "📋 Instance Details:"
+echo "  Instance ID:     $INSTANCE_ID"
+echo "  Resource Group:  $AZURE_RESOURCE_GROUP"
+echo "  Environment:     $DEPLOYMENT_ENVIRONMENT"
+echo ""
+echo "🌐 Resources:"
+echo "  Static Web App:  $STATIC_WEB_APP"
+echo "  Storage Account: $STORAGE_ACCOUNT"
+echo "  Web App URL:     $STATIC_WEB_APP_URL"
+echo ""
+echo "♻️  To redeploy to this instance:"
+echo "  Use Instance ID: $INSTANCE_ID"
+echo ""
+echo "=================================================="

@@ -53,17 +53,31 @@ write_route_mocks() {
     '      echo "{\"name\":\"gvt-dev-a1\",\"hostName\":\"gvt-dev-a1.azurefd.net\",\"provisioningState\":\"Succeeded\",\"tags\":{\"instanceId\":\"a1\"}}"' \
     '    fi' \
     '    ;;' \
-    '  "afd route show"*) echo "{\"provisioningState\":\"Succeeded\"}" ;;' \
-    '  "afd origin show"*) echo "{\"originHostHeader\":\"actual.azurestaticapps.net\"}" ;;' \
+    '  "afd endpoint show"*)' \
+    '    echo "{\"id\":\"/subscriptions/invalid/resourceGroups/rg-platform/providers/Microsoft.Cdn/profiles/gvt-afd-dev/afdEndpoints/gvt-dev-a1\",\"name\":\"gvt-dev-a1\",\"hostName\":\"gvt-dev-a1.azurefd.net\",\"enabledState\":\"Enabled\",\"provisioningState\":\"Succeeded\"}"' \
+    '    ;;' \
+    '  "afd route show"*)' \
+    '    if [ "${MOCK_ROUTE_CASE:-}" = "route-properties" ]; then' \
+    '      echo "{\"provisioningState\":\"Succeeded\",\"enabledState\":\"Enabled\",\"forwardingProtocol\":\"HttpsOnly\",\"httpsRedirect\":\"Disabled\",\"linkToDefaultDomain\":\"Enabled\",\"supportedProtocols\":[\"Http\",\"Https\"],\"patternsToMatch\":[\"/*\"],\"originGroup\":{\"id\":\"/subscriptions/invalid/resourceGroups/rg-platform/providers/Microsoft.Cdn/profiles/gvt-afd-dev/originGroups/og-a1\"}}"' \
+    '    else' \
+    '      echo "{\"provisioningState\":\"Succeeded\",\"enabledState\":\"Enabled\",\"forwardingProtocol\":\"HttpsOnly\",\"httpsRedirect\":\"Enabled\",\"linkToDefaultDomain\":\"Enabled\",\"supportedProtocols\":[\"Http\",\"Https\"],\"patternsToMatch\":[\"/*\"],\"originGroup\":{\"id\":\"/subscriptions/invalid/resourceGroups/rg-platform/providers/Microsoft.Cdn/profiles/gvt-afd-dev/originGroups/og-a1\"}}"' \
+    '    fi' \
+    '    ;;' \
+    '  "afd origin-group show"*) echo "{\"provisioningState\":\"Succeeded\",\"loadBalancingSettings\":{\"sampleSize\":4,\"successfulSamplesRequired\":3,\"additionalLatencyInMilliseconds\":50},\"healthProbeSettings\":{\"probePath\":\"/\",\"probeRequestType\":\"HEAD\",\"probeProtocol\":\"Https\",\"probeIntervalInSeconds\":60}}" ;;' \
+    '  "afd origin show"*)' \
+    '    if [ "${MOCK_ROUTE_CASE:-}" = "origin-mismatch" ]; then' \
+    '      echo "{\"id\":\"/subscriptions/invalid/resourceGroups/rg-platform/providers/Microsoft.Cdn/profiles/gvt-afd-dev/originGroups/og-a1/origins/origin-a1\",\"provisioningState\":\"Succeeded\",\"enabledState\":\"Enabled\",\"hostName\":\"actual.azurestaticapps.net\",\"originHostHeader\":\"actual.azurestaticapps.net\",\"httpPort\":80,\"httpsPort\":443,\"priority\":1,\"weight\":1000,\"enforceCertificateNameCheck\":true}"' \
+    '    else' \
+    '      echo "{\"id\":\"/subscriptions/invalid/resourceGroups/rg-platform/providers/Microsoft.Cdn/profiles/gvt-afd-dev/originGroups/og-a1/origins/origin-a1\",\"provisioningState\":\"Succeeded\",\"enabledState\":\"Enabled\",\"hostName\":\"expected.azurestaticapps.net\",\"originHostHeader\":\"expected.azurestaticapps.net\",\"httpPort\":80,\"httpsPort\":443,\"priority\":1,\"weight\":1000,\"enforceCertificateNameCheck\":true}"' \
+    '    fi' \
+    '    ;;' \
     '  *) exit 1 ;;' \
     'esac' >"$MOCK_BIN/az"
   chmod +x "$MOCK_BIN/az"
 
   printf '%s\n' '#!/bin/bash' \
-    'case "$*" in' \
-    '  *"http://"*) printf "301" ;;' \
-    '  *) printf "200" ;;' \
-    'esac' >"$MOCK_BIN/curl"
+    'echo "curl must not be called by verify" >&2' \
+    'exit 99' >"$MOCK_BIN/curl"
   chmod +x "$MOCK_BIN/curl"
 }
 
@@ -109,6 +123,22 @@ run_mock_degraded() {
   fi
 }
 
+run_mock_success() {
+  label="$1"
+  mock_case="$2"
+  shift 2
+  if ! MOCK_ROUTE_CASE="$mock_case" PATH="$MOCK_BIN:$PATH" "$CLI" "$@" >"$TMP_DIR/out.json" 2>"$TMP_DIR/err.log"; then
+    fail "$label: expected successful control-plane validation"
+    return
+  fi
+  if "$VALIDATOR" "$SCHEMA" "$TMP_DIR/out.json" >/dev/null 2>&1 &&
+    jq -e '(.status == "Succeeded") and (.route.endpointHostName == "gvt-dev-a1.azurefd.net")' "$TMP_DIR/out.json" >/dev/null 2>&1; then
+    pass "$label: validates the complete Front Door property graph without curl"
+  else
+    fail "$label: output is not a successful schema-valid validation result: $(cat "$TMP_DIR/out.json")"
+  fi
+}
+
 write_route_mocks
 run_failure "missing instance ID" register --instance-resource-group rg-a --static-web-app-name swa-a --platform-resource-group rg-platform --front-door-profile fd --subscription-id invalid --environment dev
 run_failure "malformed instance ID" register --instance-id A_B --instance-resource-group rg-a --static-web-app-name swa-a --platform-resource-group rg-platform --front-door-profile fd --subscription-id invalid --environment dev
@@ -117,7 +147,10 @@ run_failure "invalid origin hostname" register --instance-id a1 --instance-resou
 run_failure "invalid expected origin hostname" verify --instance-id a1 --instance-resource-group rg-a --static-web-app-name swa-a --platform-resource-group rg-platform --front-door-profile fd --subscription-id invalid --expected-origin-hostname invalid.example
 run_failure "invalid instance scope" register --instance-id a1 --instance-resource-group rg-platform --static-web-app-name swa-a --platform-resource-group rg-platform --front-door-profile fd --subscription-id invalid --environment dev
 run_failure "unknown option" status --instance-id a1 --instance-resource-group rg-a --static-web-app-name swa-a --platform-resource-group rg-platform --front-door-profile fd --subscription-id invalid --bogus
-run_mock_degraded "expected origin mismatch" ORIGIN_HOST_HEADER_MISMATCH origin verify --instance-id a1 --instance-resource-group rg-instance-a1 --static-web-app-name swa-instance-a1 --platform-resource-group rg-platform --front-door-profile gvt-afd-dev --subscription-id invalid --expected-origin-hostname expected.azurestaticapps.net
+run_failure "missing expected origin hostname" verify --instance-id a1 --instance-resource-group rg-instance-a1 --static-web-app-name swa-instance-a1 --platform-resource-group rg-platform --front-door-profile gvt-afd-dev --subscription-id invalid
+run_mock_success "complete route property validation" success verify --instance-id a1 --instance-resource-group rg-instance-a1 --static-web-app-name swa-instance-a1 --platform-resource-group rg-platform --front-door-profile gvt-afd-dev --subscription-id invalid --expected-origin-hostname expected.azurestaticapps.net
+run_mock_degraded "expected origin mismatch" ORIGIN_CONFIGURATION_MISMATCH origin-mismatch verify --instance-id a1 --instance-resource-group rg-instance-a1 --static-web-app-name swa-instance-a1 --platform-resource-group rg-platform --front-door-profile gvt-afd-dev --subscription-id invalid --expected-origin-hostname expected.azurestaticapps.net
+run_mock_degraded "route property mismatch" ROUTE_CONFIGURATION_MISMATCH route-properties verify --instance-id a1 --instance-resource-group rg-instance-a1 --static-web-app-name swa-instance-a1 --platform-resource-group rg-platform --front-door-profile gvt-afd-dev --subscription-id invalid --expected-origin-hostname expected.azurestaticapps.net
 run_mock_failure "ownership tag mismatch" OWNERSHIP_TAG_MISMATCH ownership unregister --instance-id a1 --instance-resource-group rg-instance-a1 --static-web-app-name swa-instance-a1 --platform-resource-group rg-platform --front-door-profile gvt-afd-dev --subscription-id invalid --confirm
 
 if [ "$FAILURES" -gt 0 ]; then
