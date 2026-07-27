@@ -22,7 +22,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: azure/setup-bicep@v2
+      - name: Ensure Bicep is available
+        shell: bash
+        run: |
+          set -euo pipefail
+          az bicep version >/dev/null 2>&1 || az bicep install
       - name: Build all Bicep templates
         shell: bash
         run: |
