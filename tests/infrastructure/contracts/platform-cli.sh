@@ -34,6 +34,7 @@ run_failure() {
 run_failure "missing environment" validate --local-only
 run_failure "invalid environment" validate --environment invalid --local-only
 run_failure "deploy requires confirmation" deploy --environment dev --subscription-id invalid --resource-group invalid
+run_failure "retire-profile requires confirmation" retire-profile --environment dev --subscription-id invalid --resource-group invalid
 if "$CLI" unknown --environment dev --local-only >"$TMP_DIR/out.json" 2>"$TMP_DIR/err.log"; then
   fail "unknown action: expected nonzero exit"
 elif jq -e 'type == "object" and .diagnostics[0].code == "UNKNOWN_ACTION"' "$TMP_DIR/out.json" >/dev/null 2>&1; then

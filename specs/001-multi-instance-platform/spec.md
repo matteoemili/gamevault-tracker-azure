@@ -92,7 +92,7 @@ As a platform operator, I can determine whether the shared entry layer and each 
 - **FR-017**: Shared resources and instance associations MUST carry ownership, environment, application, and management tags sufficient for inventory and cost allocation.
 - **FR-018**: The platform MUST expose deployment outputs needed by instance automation, including the shared entry identity, hostname suffix or equivalent address rule, and registration status.
 - **FR-019**: Failed registration or update operations MUST preserve the last known working route and provide enough diagnostic information for an operator to retry safely.
-- **FR-020**: The first release MUST support at least 25 simultaneously registered instances without requiring a redesign of the routing or naming model.
+- **FR-020**: The routing and naming model MUST support at least 25 simultaneously registered instances without redesign. The deployed capacity is set by the chosen entry-service tier and MUST be raisable to 25 by changing that tier alone.
 
 ### Scope Boundaries
 
@@ -123,7 +123,7 @@ As a platform operator, I can determine whether the shared entry layer and each 
 
 ### Measurable Outcomes
 
-- **SC-001**: In routing-isolation tests across at least 25 registered instances, 100% of requests using a valid instance address reach only the assigned instance.
+- **SC-001**: In routing-isolation tests across the deployed entry-service endpoint capacity, 100% of requests using a valid instance address reach only the assigned instance.
 - **SC-002**: A newly deployed healthy instance becomes securely reachable at its published address within 10 minutes of its origin endpoint becoming available, without manual shared-platform changes.
 - **SC-003**: Redeploying an existing instance 20 consecutive times produces no duplicate route or hostname association and preserves the same public address.
 - **SC-004**: Removing one instance leaves all other tested instance addresses available, with zero unintended routing changes.

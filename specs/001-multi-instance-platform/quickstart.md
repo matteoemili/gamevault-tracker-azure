@@ -69,7 +69,7 @@ Expected: validation passes; preview contains only shared platform resources and
 
 Run the same command again, then run `what-if` again.
 
-Expected: stable resource IDs, no duplicate resources, WAF in detection mode, diagnostics enabled, endpoint capacity reported as 25, and an empty post-deployment what-if.
+Expected: stable resource IDs, no duplicate resources, WAF in detection mode, diagnostics enabled, endpoint capacity reported as the profile SKU's limit (10 on the default `Standard_AzureFrontDoor`, 25 on `Premium_AzureFrontDoor`), and an empty post-deployment what-if.
 
 ## 4. Register One Instance
 
@@ -116,8 +116,8 @@ an optional live data-plane check after control-plane validation.
 Re-run exactly the same `register` command after an interrupted CI run. It
 returns `NoChange` after convergence and preserves the Azure-managed hostname.
 Malformed IDs, an origin outside `*.azurestaticapps.net`, an unreachable
-origin, a conflicting endpoint, or a full 25-endpoint profile return a failed
-JSON envelope before any route mutation.
+origin, a conflicting endpoint, or a profile already at its SKU endpoint
+capacity return a failed JSON envelope before any route mutation.
 
 To update the application origin without changing the published URL, use the
 same instance ID with an explicit replacement hostname:

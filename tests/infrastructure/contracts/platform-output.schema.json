@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://gamevault-tracker.local/schemas/platform-output.schema.json",
   "title": "Platform Lifecycle CLI Output",
-  "description": "Non-secret result envelope emitted by scripts/platform.sh for validate, what-if, deploy, outputs, and status. Exactly one such document is written to stdout per invocation (see contracts/platform-cli.md).",
+  "description": "Non-secret result envelope emitted by scripts/platform.sh for validate, what-if, deploy, outputs, status, and retire-profile. Exactly one such document is written to stdout per invocation (see contracts/platform-cli.md).",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "action", "status", "operationId", "platform", "diagnostics"],
@@ -13,7 +13,7 @@
     },
     "action": {
       "type": "string",
-      "enum": ["validate", "what-if", "deploy", "outputs", "status"]
+      "enum": ["validate", "what-if", "deploy", "outputs", "status", "retire-profile"]
     },
     "status": {
       "type": "string",

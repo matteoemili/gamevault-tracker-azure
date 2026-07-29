@@ -82,7 +82,7 @@ apiVersion: backstage.io/v1alpha1
 kind: Resource
 metadata:
   name: gamevault-tracker-azure-front-door
-  description: Shared Azure Front Door Premium profile that provides the domain-free global entry point for up to 25 isolated instances.
+  description: Shared Azure Front Door profile that provides the domain-free global entry point for the isolated instances. Deployed on the Standard SKU by default (10 endpoints per profile); the Premium SKU raises this to 25.
   annotations:
     github.com/project-slug: matteoemili/gamevault-tracker-azure
   tags:
@@ -101,7 +101,7 @@ apiVersion: backstage.io/v1alpha1
 kind: Resource
 metadata:
   name: gamevault-tracker-azure-front-door-waf
-  description: Centrally managed Azure Front Door Premium Web Application Firewall policy with Microsoft Default and Bot Manager rule sets.
+  description: Centrally managed Azure Front Door Web Application Firewall policy. Carries a per-client-IP rate-limit custom rule, plus the Microsoft Default and Bot Manager managed rule sets when the profile runs on the Premium SKU.
   annotations:
     github.com/project-slug: matteoemili/gamevault-tracker-azure
   tags:

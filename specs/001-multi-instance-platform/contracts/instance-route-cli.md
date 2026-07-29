@@ -27,14 +27,14 @@ mutate the route or make a live HTTP(S) request.
 
 ## Preconditions
 
-- The shared platform exists and has fewer than 25 endpoints, unless updating the same instance.
+- The shared platform exists and has spare endpoint capacity, unless updating the same instance. Capacity is read from the profile SKU: 10 endpoints on `Standard_AzureFrontDoor`, 25 on `Premium_AzureFrontDoor`.
 - The instance ID matches `^[a-z0-9]{1,8}$`.
 - The Static Web App exists in the supplied resource group and subscription.
 - The origin hostname is HTTPS reachable and ends in `.azurestaticapps.net`.
 - Registration rejects an endpoint-name conflict when the deterministic endpoint name is tagged for another instance.
 - When an endpoint already exists for the instance, its `instanceResourceGroup` and `staticWebAppName` tags must match the requested resources; otherwise registration fails before deployment.
 - `unregister` requires `--confirm`, a deterministic endpoint name, and matching `instanceId`, `instanceResourceGroup`, and `staticWebAppName` ownership tags. An ownership mismatch prevents teardown.
-- Registration runs Azure validation and what-if before mutation. A new instance is rejected when the profile already has 25 endpoints.
+- Registration runs Azure validation and what-if before mutation. A new instance is rejected when the profile already holds its SKU's endpoint capacity.
 
 ## Registration Success Output
 
@@ -114,7 +114,7 @@ check failures use `ROUTE_NOT_PROVISIONED`, `ORIGIN_NOT_FOUND`,
 - Updating an origin changes only the matching origin resource and preserves the active route until validation succeeds.
 - A conflict, capacity failure, or validation/what-if error causes no deployment mutation. A deployment failure does not roll back Azure changes; the script reports `AZURE_DEPLOY_FAILED` and states that a prior route, if present, was preserved.
 - Unregistering an absent instance returns `NoChange`.
-- The 26th distinct instance is rejected with `ENDPOINT_CAPACITY_EXCEEDED`.
+- The first distinct instance beyond the profile's SKU endpoint capacity is rejected with `ENDPOINT_CAPACITY_EXCEEDED`.
 
 Lifecycle operations are not transactions. `unregister` removes the WAF
 association before deleting the route graph; route and origin-group delete

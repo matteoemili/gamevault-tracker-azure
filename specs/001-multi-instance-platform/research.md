@@ -2,17 +2,25 @@
 
 ## Global Entry Service
 
-**Decision**: Use Azure Front Door Premium rather than Azure Traffic Manager.
+**Decision**: Use Azure Front Door rather than Azure Traffic Manager.
 
-**Rationale**: Front Door is an application-layer global entry service with HTTPS endpoints, host-aware routing, WAF managed rules, health probes, access/WAF/health logs, redirects, and explicit origin host headers. Traffic Manager is DNS-only and primarily selects among endpoints for performance or failover; it cannot provide the central HTTP protection and request routing required here.
+**Rationale**: Front Door is an application-layer global entry service with HTTPS endpoints, host-aware routing, WAF policies, health probes, access/WAF/health logs, redirects, and explicit origin host headers. Traffic Manager is DNS-only and primarily selects among endpoints for performance or failover; it cannot provide the central HTTP protection and request routing required here.
 
 **Alternatives considered**: Traffic Manager was rejected because the instances are not replicas and must never fail over to each other. Application Gateway was rejected because it is regional and adds networking complexity without improving this global public-origin scenario. Direct Static Web App hostnames remain useful as origins and break-glass endpoints during rollout, but do not provide shared protection and operations.
+
+## Entry Service Tier
+
+**Decision**: Default to `Standard_AzureFrontDoor`, with `Premium_AzureFrontDoor` selectable through the `frontDoorSku` parameter on the shared platform template.
+
+**Rationale**: Premium carries a fixed monthly base fee roughly ten times Standard's, and it dominates the entire shared-platform bill. The Premium-only capabilities are managed WAF rule sets, bot protection, and Private Link origins. Private Link is unusable here because Static Web Apps do not support it (see "Origin Security"), so the only real loss is the managed rule sets. The workload is a static SPA served from Static Web Apps with no server-side execution at the origin, so a rate-limit custom rule plus the staged origin lockdown covers the realistic threat model. Because the SKU is a single parameter and the routing and naming model is identical on both tiers, promoting to Premium is a one-line change if managed rules or 25 endpoints become necessary.
+
+**Alternatives considered**: Staying on Premium was rejected as unjustifiable cost for a demonstration platform whose only consumed Premium feature is a managed rule set. Removing the WAF policy entirely was rejected because central protection is a stated requirement (FR-014) and Standard still supports custom and rate-limit rules. Dropping Front Door altogether was rejected because the shared entry point is the architecture being demonstrated.
 
 ## Domain-Free Addressing
 
 **Decision**: Create one Front Door endpoint per instance and publish its Azure-provided deterministic hostname in the form `<endpoint>-<hash>.z01.azurefd.net`.
 
-**Rationale**: The owner has no public domain. Every Front Door endpoint receives a unique Azure-managed HTTPS hostname without DNS records or certificate issuance. A Premium profile supports 25 endpoints, exactly matching the initial scale requirement. One endpoint per instance also keeps root-relative SPA assets and browser refreshes unambiguous.
+**Rationale**: The owner has no public domain. Every Front Door endpoint receives a unique Azure-managed HTTPS hostname without DNS records or certificate issuance. The endpoints-per-profile limit is SKU-dependent - 10 on Standard, 25 on Premium - so the default Standard profile carries 10 instances and the target scale of 25 is reached by switching SKUs, not by redesign. One endpoint per instance also keeps root-relative SPA assets and browser refreshes unambiguous.
 
 **Alternatives considered**: A custom wildcard domain was rejected because no domain is owned. Path-based routing through one endpoint was rejected because the current SPA uses root-relative assets and would require application changes; it also weakens the one-address-per-instance boundary. Direct `azurestaticapps.net` addresses were rejected as the primary entry because they bypass shared WAF and observability.
 
@@ -58,11 +66,11 @@
 
 ## Monitoring and Security
 
-**Decision**: Centralize Front Door access, health probe, and WAF logs in Log Analytics with 90-day retention; deploy metric/log alerts and one shared WAF policy, beginning in detection mode and moving to prevention after validation.
+**Decision**: Centralize Front Door access, health probe, and WAF logs in Log Analytics with 90-day retention and a daily ingestion cap; deploy metric/log alerts and one shared WAF policy, beginning in detection mode and moving to prevention after validation.
 
-**Rationale**: Central logs provide per-endpoint correlation and meet audit retention. Detection-first rollout prevents managed rules from unexpectedly blocking the application. Premium is required for Microsoft-managed WAF rules and bot protection.
+**Rationale**: Central logs provide per-endpoint correlation and meet audit retention. Detection-first rollout prevents rules from unexpectedly blocking the application. Platform metrics are already retained and queryable for free in Azure Monitor, so they are not duplicated into the workspace; only log categories are forwarded, and a daily quota bounds worst-case ingestion spend. Health probes run on a four-minute interval because Front Door probes from every edge location, which multiplies both probe traffic and `FrontDoorHealthProbeLog` volume by the PoP count and again by the instance count.
 
-**Alternatives considered**: Front Door Standard was rejected because it lacks managed WAF rules and supports only 10 endpoints. Per-instance workspaces and WAF policies were rejected as costly and operationally fragmented.
+**Alternatives considered**: Exporting `AllMetrics` to the workspace was rejected because nothing queries it there and it is billed per GB. A capacity alert on `RequestCount > 0` was rejected because it is permanently in an alert state, bills per time series, and carries no signal. One-minute alert evaluation with per-origin-group dimension splitting was rejected in favour of five-minute evaluation, which still satisfies SC-006 at lower cost and without flapping on single probe failures. Per-instance workspaces and WAF policies were rejected as costly and operationally fragmented. Premium managed WAF rule sets are covered under "Entry Service Tier".
 
 ## Authentication and CI/CD
 

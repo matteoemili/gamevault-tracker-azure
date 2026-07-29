@@ -46,6 +46,22 @@ TEMPLATE_FILE="$PROJECT_ROOT/infra/platform/instance-route.bicep"
 DATA_KEY_INSTANCE="instance"
 DATA_KEY_ROUTE="route"
 
+# front_door_endpoint_capacity
+# Azure's endpoints-per-profile limit depends on the Front Door SKU: 10 on
+# Standard_AzureFrontDoor, 25 on Premium_AzureFrontDoor. Resolved from the
+# live profile so the platform can switch SKUs without editing this script.
+# Falls back to the lower Standard limit when the SKU cannot be read.
+front_door_endpoint_capacity() {
+  sku=$(az afd profile show \
+    --resource-group "$PLATFORM_RESOURCE_GROUP" \
+    --profile-name "$FRONT_DOOR_PROFILE" \
+    --subscription "$SUBSCRIPTION_ID" --query 'sku.name' -o tsv 2>/dev/null)
+  case "$sku" in
+    Premium_AzureFrontDoor) echo 25 ;;
+    *) echo 10 ;;
+  esac
+}
+
 usage() {
   cat >&2 <<'USAGE'
 Usage: instance-route.sh <register|verify|status|unregister> [options]
@@ -401,8 +417,9 @@ cmd_register() {
     fi
   fi
   endpoint_count=$(echo "$endpoints_json" | jq 'length')
-  if [ "$existing_endpoint" = "null" ] && [ "$endpoint_count" -ge 25 ]; then
-    fail_route "$ACTION" "$OP_ID" "ENDPOINT_CAPACITY_EXCEEDED" "Front Door profile already has $endpoint_count endpoints (limit: 25)"
+  endpoint_capacity="$(front_door_endpoint_capacity)"
+  if [ "$existing_endpoint" = "null" ] && [ "$endpoint_count" -ge "$endpoint_capacity" ]; then
+    fail_route "$ACTION" "$OP_ID" "ENDPOINT_CAPACITY_EXCEEDED" "Front Door profile already has $endpoint_count endpoints (limit: $endpoint_capacity)"
   fi
 
   endpoint_id="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${PLATFORM_RESOURCE_GROUP}/providers/Microsoft.Cdn/profiles/${FRONT_DOOR_PROFILE}/afdEndpoints/${endpoint_name}"
@@ -591,7 +608,7 @@ cmd_verify() {
      (.healthProbeSettings.probePath == "/") and
      (.healthProbeSettings.probeRequestType == "HEAD") and
      (.healthProbeSettings.probeProtocol == "Https") and
-     (.healthProbeSettings.probeIntervalInSeconds == 60)' >/dev/null || \
+     (.healthProbeSettings.probeIntervalInSeconds == 240)' >/dev/null || \
     add_failure "ORIGIN_GROUP_CONFIGURATION_MISMATCH" "Origin group does not match the required Front Door configuration"
   echo "$origin_json" | jq -e \
     --arg expectedOrigin "$EXPECTED_ORIGIN_HOSTNAME" \
@@ -773,7 +790,10 @@ cmd_status() {
     --resource-group "$PLATFORM_RESOURCE_GROUP" \
     --profile-name "$FRONT_DOOR_PROFILE" \
     --subscription "$SUBSCRIPTION_ID" --query 'length(@)' -o tsv 2>/dev/null)
-  diagnostics=$(echo "$diagnostics" | jq --arg count "${endpoint_count:-unknown}" '. + [{code: "CAPACITY_STATUS", message: ("Front Door endpoint capacity: " + $count + "/25")}]')
+  diagnostics=$(echo "$diagnostics" | jq \
+    --arg count "${endpoint_count:-unknown}" \
+    --arg capacity "$(front_door_endpoint_capacity)" \
+    '. + [{code: "CAPACITY_STATUS", message: ("Front Door endpoint capacity: " + $count + "/" + $capacity)}]')
 
   endpoint_hostname=$(echo "$route_obj" | jq -r '.endpointHostName')
   health_status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "https://${endpoint_hostname}/" 2>/dev/null)

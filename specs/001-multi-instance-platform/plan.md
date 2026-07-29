@@ -8,7 +8,7 @@
 
 ## Summary
 
-Build an independently deployed shared Azure entry platform that assigns each isolated GameVault instance its own Azure-provided HTTPS hostname. Azure Front Door Premium provides one endpoint, route, origin group, and origin per instance; each origin group contains only that instance plus an optional shared maintenance origin, so no request can reach another instance. Bicep modules and Bash wrappers expose the same `validate`, `what-if`, `deploy`, `register`, `verify`, and `unregister` operations for interactive local use and later CI/CD composition.
+Build an independently deployed shared Azure entry platform that assigns each isolated GameVault instance its own Azure-provided HTTPS hostname. Azure Front Door provides one endpoint, route, origin group, and origin per instance; each origin group contains only that instance plus an optional shared maintenance origin, so no request can reach another instance. Bicep modules and Bash wrappers expose the same `validate`, `what-if`, `deploy`, `register`, `verify`, and `unregister` operations for interactive local use and later CI/CD composition.
 
 ## Technical Context
 
@@ -20,7 +20,7 @@ Build an independently deployed shared Azure entry platform that assigns each is
 
 **Language/Version**: Bicep supported by the current Azure CLI; Bash 3.2+ for macOS compatibility; JSON for machine-readable command results
 
-**Primary Dependencies**: Azure CLI with Bicep, `jq`, Azure Front Door Premium, Azure Monitor, Log Analytics, Storage static website for the maintenance origin, existing Azure Static Web Apps
+**Primary Dependencies**: Azure CLI with Bicep, `jq`, Azure Front Door (Standard by default, Premium selectable), Azure Monitor, Log Analytics, Storage static website for the maintenance origin, existing Azure Static Web Apps
 
 **Storage**: Existing per-instance Table Storage remains unchanged; one shared StorageV2 account hosts a static maintenance response; Azure control-plane resources are the registration source of truth
 
@@ -32,9 +32,9 @@ Build an independently deployed shared Azure entry platform that assigns each is
 
 **Performance Goals**: Register a healthy instance in under 10 minutes; 95% of representative requests complete or return a controlled unavailable response within 3 seconds; health alerts fire within 5 minutes
 
-**Constraints**: No owned domain; no cross-instance failover; one Azure-provided endpoint hostname per instance; Front Door Premium limit of 25 endpoints per profile exactly meets v1 capacity; Azure Static Web Apps do not support Front Door Private Link; scripts must be non-interactive, idempotent, fail-fast, and emit masked machine-readable outputs
+**Constraints**: No owned domain; no cross-instance failover; one Azure-provided endpoint hostname per instance; the Front Door endpoints-per-profile limit is SKU-dependent (10 on Standard, 25 on Premium) and caps registered instances accordingly; Azure Static Web Apps do not support Front Door Private Link; scripts must be non-interactive, idempotent, fail-fast, and emit masked machine-readable outputs
 
-**Scale/Scope**: One shared platform resource group and Front Door Premium profile; up to 25 registered instances per profile; each instance retains its own resource group, Static Web App, and storage account
+**Scale/Scope**: One shared platform resource group and Front Door profile; up to the SKU's endpoint capacity of registered instances per profile (10 on Standard, 25 on Premium); each instance retains its own resource group, Static Web App, and storage account
 
 ## Constitution Check
 
@@ -106,7 +106,7 @@ Each increment is independently runnable and must pass its exit criteria before 
 
 1. **Offline foundation**: split reusable instance resources only where required; add platform module skeletons, parameter validation, naming functions, and local command dispatch. Exit when all Bicep builds and shell contract tests pass without Azure mutation.
 2. **Azure preflight**: implement login/subscription checks, provider checks, deployment validation, and what-if for an empty shared platform. Exit when validation succeeds and what-if shows only the expected shared resource group contents.
-3. **Shared entry platform**: deploy Front Door Premium, WAF in detection mode, maintenance origin, Log Analytics, diagnostics, and outputs. Exit when redeployment is idempotent and the default endpoint/maintenance response is observable.
+3. **Shared entry platform**: deploy the Front Door profile, WAF in detection mode, maintenance origin, Log Analytics, diagnostics, and outputs. Exit when redeployment is idempotent and the default endpoint/maintenance response is observable.
 4. **Single-instance lifecycle**: register one existing Static Web App as one endpoint, one route, one origin group, and one origin; emit its Azure-provided hostname. Exit when HTTPS routing works, the origin host header is correct, and a second registration is a no-op.
 5. **Isolation and scale proof**: register two distinguishable instances, simulate one failure, run repeatability tests, and generate a 25-instance what-if fixture. Exit when no request crosses instance boundaries and profile limits are enforced before mutation.
 6. **Origin hardening**: add `staticwebapp.config.json` forwarding-gateway restrictions using the shared Front Door ID and each generated endpoint hostname; keep rollout reversible until every instance is verified through Front Door. Exit when direct-origin access is denied and routed access remains healthy.

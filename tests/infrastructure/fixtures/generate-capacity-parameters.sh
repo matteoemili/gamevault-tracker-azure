@@ -2,8 +2,9 @@
 # ============================================================================
 # generate-capacity-parameters.sh - User Story 1 fixture + test (T018)
 # ============================================================================
-# Generates a 25-instance fixture (the Premium Front Door endpoint capacity
-# limit - see research.md "Global Entry Service") using the SAME
+# Generates a 25-instance fixture (the highest Front Door endpoint capacity
+# limit, on the Premium SKU - see research.md "Domain-Free Addressing") using
+# the SAME
 # deterministic naming scheme as infra/platform/modules/instance-route.bicep,
 # then asserts every instance produces a unique endpoint, origin-group,
 # origin, and route name. This proves the naming scheme is collision-free
