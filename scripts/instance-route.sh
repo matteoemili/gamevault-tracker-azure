@@ -608,7 +608,7 @@ cmd_verify() {
      (.healthProbeSettings.probePath == "/") and
      (.healthProbeSettings.probeRequestType == "HEAD") and
      (.healthProbeSettings.probeProtocol == "Https") and
-     (.healthProbeSettings.probeIntervalInSeconds == 60)' >/dev/null || \
+     (.healthProbeSettings.probeIntervalInSeconds == 240)' >/dev/null || \
     add_failure "ORIGIN_GROUP_CONFIGURATION_MISMATCH" "Origin group does not match the required Front Door configuration"
   echo "$origin_json" | jq -e \
     --arg expectedOrigin "$EXPECTED_ORIGIN_HOSTNAME" \

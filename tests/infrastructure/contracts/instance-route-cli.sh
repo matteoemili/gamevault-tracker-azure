@@ -63,7 +63,7 @@ write_route_mocks() {
     '      echo "{\"provisioningState\":\"Succeeded\",\"enabledState\":\"Enabled\",\"forwardingProtocol\":\"HttpsOnly\",\"httpsRedirect\":\"Enabled\",\"linkToDefaultDomain\":\"Enabled\",\"supportedProtocols\":[\"Http\",\"Https\"],\"patternsToMatch\":[\"/*\"],\"originGroup\":{\"id\":\"/subscriptions/invalid/resourceGroups/rg-platform/providers/Microsoft.Cdn/profiles/gvt-afd-dev/originGroups/og-a1\"}}"' \
     '    fi' \
     '    ;;' \
-    '  "afd origin-group show"*) echo "{\"provisioningState\":\"Succeeded\",\"loadBalancingSettings\":{\"sampleSize\":4,\"successfulSamplesRequired\":3,\"additionalLatencyInMilliseconds\":50},\"healthProbeSettings\":{\"probePath\":\"/\",\"probeRequestType\":\"HEAD\",\"probeProtocol\":\"Https\",\"probeIntervalInSeconds\":60}}" ;;' \
+    '  "afd origin-group show"*) echo "{\"provisioningState\":\"Succeeded\",\"loadBalancingSettings\":{\"sampleSize\":4,\"successfulSamplesRequired\":3,\"additionalLatencyInMilliseconds\":50},\"healthProbeSettings\":{\"probePath\":\"/\",\"probeRequestType\":\"HEAD\",\"probeProtocol\":\"Https\",\"probeIntervalInSeconds\":240}}" ;;' \
     '  "afd origin show"*)' \
     '    if [ "${MOCK_ROUTE_CASE:-}" = "origin-mismatch" ]; then' \
     '      echo "{\"id\":\"/subscriptions/invalid/resourceGroups/rg-platform/providers/Microsoft.Cdn/profiles/gvt-afd-dev/originGroups/og-a1/origins/origin-a1\",\"provisioningState\":\"Succeeded\",\"enabledState\":\"Enabled\",\"hostName\":\"actual.azurestaticapps.net\",\"originHostHeader\":\"actual.azurestaticapps.net\",\"httpPort\":80,\"httpsPort\":443,\"priority\":1,\"weight\":1000,\"enforceCertificateNameCheck\":true}"' \
