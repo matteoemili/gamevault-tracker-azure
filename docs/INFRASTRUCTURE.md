@@ -20,7 +20,7 @@ This document provides comprehensive documentation for the Infrastructure as Cod
 ## Shared Multi-Instance Entry Platform
 
 The shared platform lives in its own resource group and contains one Azure
-Front Door Premium profile, a central WAF policy, Log Analytics diagnostics,
+Front Door profile, a central WAF policy, Log Analytics diagnostics,
 alerts, and a tagged cost budget. Each instance remains in its own resource
 group with its own Static Web App and Table Storage account. A route lifecycle
 operation creates one Azure-provided `azurefd.net` endpoint, one route, one
@@ -33,9 +33,15 @@ instance cannot fail over to another instance.
 
 The security boundary is centralized WAF enforcement plus endpoint-scoped
 associations, while management is limited by resource-group role assignments.
-Operational logs remain in the shared workspace for at least 90 days. Front
-Door Premium supports 25 endpoints per profile in this release; create a new
-profile and shard new instance IDs when the capacity check reports 25/25.
+Operational logs remain in the shared workspace for at least 90 days.
+
+The profile is deployed on `Standard_AzureFrontDoor` by default, which costs
+roughly a tenth of Premium's fixed monthly base fee. Standard supports custom
+and rate-limit WAF rules but not Microsoft-managed rule sets or bot protection,
+and it allows 10 endpoints per profile instead of 25. Set the `frontDoorSku`
+parameter to `Premium_AzureFrontDoor` to restore both. The endpoint capacity
+reported by the CLI is read from the live profile SKU; create a new profile and
+shard new instance IDs once the capacity check reports the limit as reached.
 
 Use `scripts/instance-route.sh status` to inspect a route’s HTTP health,
 capacity, last lifecycle deployment, and orphaned-instance indication. Use

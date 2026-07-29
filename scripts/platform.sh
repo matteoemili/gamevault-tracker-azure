@@ -3,7 +3,7 @@
 # platform.sh - Shared Multi-Instance Entry Platform lifecycle CLI
 # ============================================================================
 # Usage:
-#   ./scripts/platform.sh <validate|what-if|deploy|outputs|status> [options]
+#   ./scripts/platform.sh <validate|what-if|deploy|outputs|status|retire-profile> [options]
 #
 # Options:
 #   --environment <dev|staging|prod>   (required for all actions)
@@ -12,8 +12,19 @@
 #   --location <azure-region>          (required for deploy; defaults applied otherwise)
 #   --base-name <name>                 (optional, defaults to "gvt")
 #   --local-only                       (validate: skip all Azure calls, offline Bicep build only)
-#   --confirm                          (required for deploy)
+#   --confirm                          (required for deploy and retire-profile)
 #   --non-interactive                  (informational; still requires --confirm for deploy)
+#
+# `retire-profile` exists because Azure does not support downgrading a Front
+# Door profile from Premium to Standard in place
+# (https://learn.microsoft.com/azure/frontdoor/tier-upgrade). It deletes only
+# the SKU-locked resources - the Front Door profile and its WAF policy -
+# leaving the resource group, Log Analytics workspace, alerts, budget, RBAC,
+# and maintenance origin intact so `deploy` can recreate the profile on the
+# new SKU. DESTRUCTIVE: deleting the profile removes every registered
+# instance endpoint, and recreation issues new `*.azurefd.net` hostnames, so
+# every instance must be re-registered and its Table Storage CORS rules
+# updated afterwards.
 #
 # See specs/001-multi-instance-platform/contracts/platform-cli.md for the
 # full command contract and specs/001-multi-instance-platform/quickstart.md
@@ -39,15 +50,19 @@ DATA_KEY="platform"
 
 usage() {
   cat >&2 <<'USAGE'
-Usage: platform.sh <validate|what-if|deploy|outputs|status> [options]
+Usage: platform.sh <validate|what-if|deploy|outputs|status|retire-profile> [options]
   --environment <dev|staging|prod>
   --subscription-id <uuid>
   --resource-group <name>
   --location <azure-region>
   --base-name <name>            (default: gvt)
   --local-only                  (validate only: skip Azure, offline Bicep build)
-  --confirm                     (required for deploy)
+  --confirm                     (required for deploy and retire-profile)
   --non-interactive              (informational flag; --confirm still required)
+
+retire-profile deletes the Front Door profile and its WAF policy so that
+'deploy' can recreate them on a different SKU. This is DESTRUCTIVE: all
+instance endpoints are removed and recreation issues new hostnames.
 USAGE
 }
 
@@ -56,7 +71,7 @@ ACTION="${1:-}"
 shift || true
 
 case "$ACTION" in
-  validate|what-if|deploy|outputs|status) ;;
+  validate|what-if|deploy|outputs|status|retire-profile) ;;
   *)
     usage
     fail_fast "$DATA_KEY" "$ACTION" "$(operation_id platform unknown)" "UNKNOWN_ACTION" "Unknown action: $ACTION"
@@ -151,7 +166,7 @@ platform_object_from_outputs() {
       resourceGroupName: $resourceGroupName,
       frontDoorProfileId: (.frontDoorProfileId.value // ""),
       frontDoorId: (.frontDoorId.value // ""),
-      endpointCapacity: (.endpointCapacity.value // 25),
+      endpointCapacity: (.endpointCapacity.value // 10),
       registeredEndpointCount: $registeredEndpointCount,
       wafMode: (.wafMode.value // "Detection"),
       workspaceId: (.workspaceId.value // ""),
@@ -360,10 +375,109 @@ cmd_status() {
   emit_json_envelope "$DATA_KEY" "$ACTION" "Succeeded" "$OP_ID" "$platform_obj"
 }
 
+cmd_retire_profile() {
+  if [ "$CONFIRM" -ne 1 ]; then
+    fail_fast "$DATA_KEY" "$ACTION" "$OP_ID" "CONFIRMATION_REQUIRED" "retire-profile deletes the Front Door profile and its WAF policy and requires --confirm"
+  fi
+
+  require_azure_login
+  require_subscription "$SUBSCRIPTION_ID"
+
+  if ! az group show --name "$RESOURCE_GROUP" --subscription "$SUBSCRIPTION_ID" >/dev/null 2>&1; then
+    fail_fast "$DATA_KEY" "$ACTION" "$OP_ID" "RESOURCE_GROUP_NOT_FOUND" "Resource group '$RESOURCE_GROUP' does not exist"
+  fi
+
+  profile_name="$(front_door_profile_name)"
+  waf_policy_name="$(echo "$profile_name" | tr -d '-')"
+
+  # Capture the pre-deletion state first: once the profile is gone this
+  # information is unrecoverable, and the operator needs the instance list to
+  # know what must be re-registered.
+  if ! profile_json="$(az afd profile show \
+    --resource-group "$RESOURCE_GROUP" \
+    --profile-name "$profile_name" \
+    --subscription "$SUBSCRIPTION_ID" -o json 2>/dev/null)"; then
+    log_info "Front Door profile '$profile_name' does not exist; nothing to retire"
+    outputs_json="$(latest_deployment_outputs | jq 'with_entries(.value |= {value: .value.value})' 2>/dev/null || echo "{}")"
+    platform_obj=$(platform_object_from_outputs "$outputs_json")
+    emit_json_envelope "$DATA_KEY" "$ACTION" "NoChange" "$OP_ID" "$platform_obj" \
+      "$(diagnostic_array "PROFILE_NOT_FOUND" "Front Door profile '$profile_name' does not exist; run 'deploy' to create it on the current SKU")"
+    return 0
+  fi
+
+  endpoints_json=$(az afd endpoint list \
+    --resource-group "$RESOURCE_GROUP" \
+    --profile-name "$profile_name" \
+    --subscription "$SUBSCRIPTION_ID" -o json 2>/dev/null) || endpoints_json='[]'
+
+  retired_instance_ids=$(echo "$endpoints_json" | jq -c '[.[] | .tags.instanceId // empty] | sort')
+  outputs_json="$(latest_deployment_outputs | jq 'with_entries(.value |= {value: .value.value})' 2>/dev/null || echo "{}")"
+
+  platform_obj=$(echo "$profile_json" | jq \
+    --arg resourceGroupName "$RESOURCE_GROUP" \
+    --argjson registeredEndpointCount "$(echo "$endpoints_json" | jq 'length')" \
+    --arg wafMode "$(echo "$outputs_json" | jq -r '.wafMode.value // "Detection"')" \
+    '{
+      resourceGroupName: $resourceGroupName,
+      frontDoorProfileId: (.id // ""),
+      frontDoorId: (.frontDoorId // ""),
+      endpointCapacity: (if (.sku.name // "") == "Premium_AzureFrontDoor" then 25 else 10 end),
+      registeredEndpointCount: $registeredEndpointCount,
+      wafMode: $wafMode
+    }')
+
+  # Deleted by resource ID rather than 'az afd profile delete': the cdn
+  # extension has changed that command's arguments across versions (--yes was
+  # removed), and a generic delete never prompts.
+  profile_id=$(echo "$profile_json" | jq -r '.id // empty')
+  if [ -z "$profile_id" ]; then
+    fail_fast "$DATA_KEY" "$ACTION" "$OP_ID" "PROFILE_DELETE_FAILED" "Could not resolve the resource ID of Front Door profile '$profile_name'"
+  fi
+
+  log_info "Deleting Front Door profile '$profile_name' and all of its endpoints, routes, origin groups, and security policies"
+  if ! az resource delete --ids "$profile_id" >/dev/null 2>"$SCRATCH_DIR/profile-delete.err"; then
+    err="$(mask_secrets < "$SCRATCH_DIR/profile-delete.err")"
+    fail_fast "$DATA_KEY" "$ACTION" "$OP_ID" "PROFILE_DELETE_FAILED" "Could not delete Front Door profile '$profile_name': $err"
+  fi
+  log_success "Front Door profile deleted"
+
+  # The WAF policy is a separate Microsoft.Network resource whose SKU must
+  # match the profile, so it has to go too. It can only be deleted after the
+  # profile, because the profile's security policy references it. Deleted by
+  # resource ID so this does not depend on the az front-door CLI extension.
+  waf_policy_id="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.Network/frontdoorWebApplicationFirewallPolicies/${waf_policy_name}"
+  if az resource show --ids "$waf_policy_id" >/dev/null 2>&1; then
+    log_info "Deleting WAF policy '$waf_policy_name'"
+    if ! az resource delete --ids "$waf_policy_id" >/dev/null 2>"$SCRATCH_DIR/waf-delete.err"; then
+      err="$(mask_secrets < "$SCRATCH_DIR/waf-delete.err")"
+      fail_fast "$DATA_KEY" "$ACTION" "$OP_ID" "WAF_POLICY_DELETE_FAILED" "Front Door profile was deleted but WAF policy '$waf_policy_name' could not be removed; delete it manually before redeploying, because its SKU cannot be changed in place: $err"
+    fi
+    log_success "WAF policy deleted"
+  else
+    log_info "WAF policy '$waf_policy_name' not found; skipping"
+  fi
+
+  diagnostics=$(echo "$retired_instance_ids" | jq \
+    --arg profileName "$profile_name" \
+    '[{
+        code: "PROFILE_RETIRED",
+        message: ("Front Door profile \"" + $profileName + "\" and its WAF policy were deleted. Run deploy to recreate them on the SKU in the parameter file.")
+      },
+      {
+        code: "REREGISTRATION_REQUIRED",
+        message: ("Recreation issues new *.azurefd.net hostnames. Re-register " + (length | tostring) + " instance(s) with scripts/instance-route.sh, then update each instance Table Storage CORS rule with scripts/cors-add-origin.sh.")
+      }]
+      + [.[] | {code: "RETIRED_INSTANCE", message: ("Instance requiring re-registration: " + .)}]')
+
+  log_success "Profile retired; run 'deploy' to recreate it on the configured SKU"
+  emit_json_envelope "$DATA_KEY" "$ACTION" "Succeeded" "$OP_ID" "$platform_obj" "$diagnostics"
+}
+
 case "$ACTION" in
   validate) cmd_validate ;;
   what-if) cmd_whatif ;;
   deploy) cmd_deploy ;;
   outputs) cmd_outputs ;;
   status) cmd_status ;;
+  retire-profile) cmd_retire_profile ;;
 esac

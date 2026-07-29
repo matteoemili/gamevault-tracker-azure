@@ -2,7 +2,7 @@
 // Per-Instance Front Door Route
 // ============================================================================
 // Deployed once per application instance against the existing shared Front
-// Door Premium profile. Creates exactly one endpoint, one origin group, one
+// Door profile. Creates exactly one endpoint, one origin group, one
 // application origin (the instance's Static Web App), an optional shared
 // maintenance fallback origin, and one route.
 //
@@ -98,7 +98,11 @@ resource originGroup 'Microsoft.Cdn/profiles/originGroups@2024-09-01' = {
       probePath: '/'
       probeRequestType: 'HEAD'
       probeProtocol: 'Https'
-      probeIntervalInSeconds: 60
+      // Front Door probes from every edge location, so the probe interval is
+      // multiplied by the PoP count and again by the instance count. Four
+      // minutes keeps failover behaviour while cutting probe request volume
+      // and FrontDoorHealthProbeLog ingestion by 4x versus a 60s interval.
+      probeIntervalInSeconds: 240
     }
   }
 }

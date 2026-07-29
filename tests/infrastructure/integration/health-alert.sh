@@ -17,6 +17,6 @@ alert=$(az monitor metrics alert show \
 
 window=$(echo "$alert" | jq -r '.windowSize // empty')
 dimensions=$(echo "$alert" | jq -r '[.criteria.allOf[]?.dimensions[]?.name] | join(",")')
-[ "$window" = "PT5M" ] || { echo "[health-alert] expected a five-minute window, found ${window:-<none>}" >&2; exit 1; }
+[ "$window" = "PT15M" ] || { echo "[health-alert] expected a fifteen-minute window, found ${window:-<none>}" >&2; exit 1; }
 case ",$dimensions," in *,OriginGroup,*|*,originGroup,*) ;; *) echo "[health-alert] alert has no origin-group-identifying dimension" >&2; exit 1 ;; esac
 echo "[health-alert] passed: ${ROUTE_INSTANCE_ID} is identified through the origin-group dimension" >&2

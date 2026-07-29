@@ -10,16 +10,16 @@ The model describes Azure control-plane state and command results. It does not i
 | subscriptionId | UUID | Must match the active or explicitly selected subscription |
 | resourceGroupName | string | Dedicated shared group; must not equal an instance resource group |
 | environment | enum | `dev`, `staging`, or `prod` |
-| frontDoorProfileId | Azure resource ID | Premium profile in the shared resource group |
+| frontDoorProfileId | Azure resource ID | Front Door profile in the shared resource group |
 | frontDoorId | string | Output used by Static Web App forwarding-gateway restrictions |
 | maintenanceOriginHost | hostname | Shared, non-tenant static content endpoint |
-| endpointCapacity | integer | 25 for the initial Premium profile |
+| endpointCapacity | integer | Derived from the profile SKU: 10 on Standard (default), 25 on Premium |
 | registeredEndpointCount | integer | Computed from endpoint resources; must be 0-25 |
 | logWorkspaceId | Azure resource ID | Workspace retaining platform logs for at least 90 days |
 | wafMode | enum | `Detection` during rollout, then `Prevention` |
 | tags | object | Includes application, environment, owner, managedBy, and cost center |
 
-**Relationships**: Owns one Front Door profile, WAF policy, maintenance origin, monitoring configuration, and zero to 25 Instance Routes.
+**Relationships**: Owns one Front Door profile, WAF policy, maintenance origin, monitoring configuration, and zero to `endpointCapacity` Instance Routes.
 
 ## Application Instance
 

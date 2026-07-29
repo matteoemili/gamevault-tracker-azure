@@ -176,6 +176,29 @@ JSON
 }
 JSON
 
+  # --- platform-output: retire-profile Succeeded ---
+  cat > "$tmp_dir/platform-retired.json" <<'JSON'
+{
+  "schemaVersion": "1.0",
+  "action": "retire-profile",
+  "status": "Succeeded",
+  "operationId": "platform-prod-20260729T090000Z",
+  "platform": {
+    "resourceGroupName": "rg-gamevault-platform-prod",
+    "frontDoorProfileId": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-gamevault-platform-prod/providers/Microsoft.Cdn/profiles/gvt-afd-prod",
+    "frontDoorId": "redacted-non-secret-identifier",
+    "endpointCapacity": 25,
+    "registeredEndpointCount": 2,
+    "wafMode": "Detection"
+  },
+  "diagnostics": [
+    { "code": "PROFILE_RETIRED", "message": "Front Door profile and its WAF policy were deleted." },
+    { "code": "REREGISTRATION_REQUIRED", "message": "Re-register 2 instance(s) after redeploying." },
+    { "code": "RETIRED_INSTANCE", "message": "Instance requiring re-registration: abc12345" }
+  ]
+}
+JSON
+
   # --- platform-output: invalid (missing required key, bad status enum) ---
   cat > "$tmp_dir/platform-invalid.json" <<'JSON'
 {
@@ -190,6 +213,7 @@ JSON
   expect_pass "platform Succeeded"  "$PLATFORM_SCHEMA" "$tmp_dir/platform-succeeded.json"
   expect_pass "platform NoChange"   "$PLATFORM_SCHEMA" "$tmp_dir/platform-nochange.json"
   expect_pass "platform Failed"     "$PLATFORM_SCHEMA" "$tmp_dir/platform-failed.json"
+  expect_pass "platform retired"    "$PLATFORM_SCHEMA" "$tmp_dir/platform-retired.json"
   expect_fail "platform invalid"    "$PLATFORM_SCHEMA" "$tmp_dir/platform-invalid.json"
 
   # --- instance-route-output: register Succeeded ---

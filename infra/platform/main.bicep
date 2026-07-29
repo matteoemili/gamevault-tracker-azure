@@ -36,6 +36,10 @@ param baseName string = 'gvt'
 @description('Azure region for the shared platform resources')
 param location string = resourceGroup().location
 
+@description('Front Door SKU. Standard is the cost-optimised default (custom WAF rules only, 10 endpoints per profile). Premium adds managed WAF rule sets and bot protection and raises the endpoint limit to 25, at roughly ten times the fixed monthly cost.')
+@allowed(['Standard_AzureFrontDoor', 'Premium_AzureFrontDoor'])
+param frontDoorSku string = 'Standard_AzureFrontDoor'
+
 @description('WAF policy mode. Detection first; promote to Prevention only after log review (see research.md)')
 @allowed(['Detection', 'Prevention'])
 param wafMode string = 'Detection'
@@ -88,6 +92,7 @@ module frontDoor 'modules/front-door.bicep' = {
   name: 'platform-front-door'
   params: {
     profileName: frontDoorProfileName
+    sku: frontDoorSku
     tags: baseTags
     wafMode: wafMode
   }
@@ -156,7 +161,10 @@ output frontDoorId string = frontDoor.outputs.frontDoorId
 @description('The centrally managed Front Door WAF policy ID')
 output wafPolicyId string = frontDoor.outputs.wafPolicyId
 
-@description('Maximum number of instance endpoints supported by the Premium_AzureFrontDoor SKU')
+@description('The Front Door SKU the shared profile was provisioned with')
+output frontDoorSku string = frontDoor.outputs.sku
+
+@description('Maximum number of instance endpoints supported by the configured Front Door SKU (10 on Standard, 25 on Premium)')
 output endpointCapacity int = frontDoor.outputs.endpointCapacity
 
 @description('The hostname of the shared maintenance origin, for use by instance-route deployments')

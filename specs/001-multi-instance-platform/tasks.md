@@ -65,7 +65,7 @@
 
 - [x] T019 [P] [US1] Provision a shared HTTPS StorageV2 static website containing no tenant data, disable unnecessary services, and expose only its maintenance hostname in infra/platform/modules/maintenance-origin.bicep
 - [x] T020 [P] [US1] Add the generic cache-disabled unavailable page with a correlation identifier placeholder in infra/platform/assets/maintenance/index.html
-- [x] T021 [US1] Provision the Premium Front Door profile with deterministic naming, required ownership tags, TLS defaults, and endpoint-capacity metadata in infra/platform/modules/front-door.bicep
+- [x] T021 [US1] Provision the Front Door profile with a SKU parameter (Standard default, Premium optional), deterministic naming, required ownership tags, TLS defaults, and SKU-derived endpoint-capacity metadata in infra/platform/modules/front-door.bicep
 - [x] T022 [US1] Provision one deterministic endpoint, one route, one origin group, and one HTTPS-only Static Web App origin with the exact origin host header in infra/platform/modules/instance-route.bicep
 - [x] T023 [US1] Add the optional lower-priority maintenance origin without adding any other application origin to the instance group in infra/platform/modules/instance-route.bicep
 - [x] T024 [US1] Compose Front Door and maintenance modules while keeping all per-instance route deployments outside the base deployment in infra/platform/main.bicep
@@ -123,10 +123,10 @@
 ### Implementation for User Story 3
 
 - [x] T046 [P] [US3] Provision a 90-day Log Analytics workspace and Front Door access, health-probe, and WAF diagnostic settings in infra/platform/modules/monitoring.bicep
-- [x] T047 [US3] Provision action groups plus shared-entry, repeated-origin-health, certificate, deployment-failure, and endpoint-capacity alerts with instance-identifying dimensions in infra/platform/modules/monitoring.bicep
+- [x] T047 [US3] Provision action groups plus shared-entry, repeated-origin-health, certificate, and deployment-failure alerts with instance-identifying dimensions in infra/platform/modules/monitoring.bicep
 - [x] T048 [P] [US3] Provision least-privilege operator, shared-platform deployment, and instance-route deployment role assignments from principal IDs in infra/platform/modules/rbac.bicep
 - [x] T049 [P] [US3] Provision environment budget alerts and tag-based application cost attribution using configurable thresholds in infra/platform/modules/cost-management.bicep
-- [x] T050 [US3] Provision a centrally associated Front Door WAF policy with managed rules and bot protection, parameterized for detection-to-prevention promotion in infra/platform/modules/front-door.bicep
+- [x] T050 [US3] Provision a centrally associated Front Door WAF policy with a per-client-IP rate-limit custom rule on Standard and managed rules plus bot protection on Premium, parameterized for detection-to-prevention promotion in infra/platform/modules/front-door.bicep
 - [x] T051 [US3] Compose monitoring, RBAC, cost management, and WAF outputs without introducing instance-resource-group dependencies in infra/platform/main.bicep
 - [x] T052 [US3] Implement guarded deregistration that validates deterministic names and ownership tags, deletes only the matching endpoint graph, and returns `NoChange` when absent in scripts/instance-route.sh
 - [x] T053 [US3] Implement orphan reporting, per-instance health status, last lifecycle operation, capacity status, and actionable diagnostics in scripts/instance-route.sh

@@ -14,7 +14,7 @@ Complete the existing CI/CD publication path so every successfully deployed Game
 
 **Language/Version**: GitHub Actions YAML; Bash 3.2+ for repository scripts and tests; Bicep supported by Azure CLI 0.39.26; JSON for machine-readable results
 
-**Primary Dependencies**: Existing `azure/login`, `Azure/static-web-apps-deploy`, Azure CLI, `jq`, `curl`, `scripts/instance-route.sh`, `scripts/cors-add-origin.sh`, Azure Front Door Premium, Azure Static Web Apps, Azure Table Storage
+**Primary Dependencies**: Existing `azure/login`, `Azure/static-web-apps-deploy`, Azure CLI, `jq`, `curl`, `scripts/instance-route.sh`, `scripts/cors-add-origin.sh`, Azure Front Door, Azure Static Web Apps, Azure Table Storage
 
 **Storage**: No new persistent store; Azure control-plane resources remain the route source of truth, Table Storage CORS remains instance-owned configuration, and sanitized JSON workflow artifacts retain operation results
 

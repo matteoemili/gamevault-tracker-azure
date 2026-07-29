@@ -363,7 +363,9 @@ touches only an endpoint with matching ownership tags.
 ```
 
 Expected platform outputs include `frontDoorProfileId`, `frontDoorId`,
-`workspaceId`, `wafPolicyId`, `endpointCapacity`, and `budgetId`. Register and
+`workspaceId`, `wafPolicyId`, `frontDoorSku`, `endpointCapacity`, and
+`budgetId`. `endpointCapacity` follows the SKU: 10 on `Standard_AzureFrontDoor`
+(the default) and 25 on `Premium_AzureFrontDoor`. Register and
 verify each instance with `scripts/instance-route.sh`; route commands emit one
 redacted JSON result to stdout and write diagnostics to stderr.
 
@@ -371,6 +373,32 @@ For a failed route deployment, rerun the same `register` command after fixing
 the reported preflight issue. For a retired instance, first run `status`, then
 run `unregister --confirm`, and finally confirm the sibling URLs remain healthy.
 Use [specs/001-multi-instance-platform/quickstart.md](specs/001-multi-instance-platform/quickstart.md) for the complete commands and [docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) for topology and service limits.
+
+### Changing the Front Door SKU
+
+Upgrading Standard to Premium is supported in place: change `frontDoorSku` in
+the environment parameter file and run `deploy`.
+
+Downgrading Premium to Standard is **not** supported by Azure, and a WAF
+policy's SKU must match its profile, so `deploy` alone fails on the immutable
+SKU property. Use `retire-profile` to delete the two SKU-locked resources and
+then redeploy:
+
+```bash
+# Records what is about to be destroyed, then deletes the profile and WAF policy.
+# Everything else in the resource group is preserved.
+./scripts/platform.sh retire-profile --environment prod --subscription-id "$AZURE_SUBSCRIPTION_ID" --resource-group "$PLATFORM_RG" --confirm | tee /tmp/gamevault-retire.json | jq .
+./scripts/platform.sh deploy --environment prod --subscription-id "$AZURE_SUBSCRIPTION_ID" --resource-group "$PLATFORM_RG" --location "$LOCATION" --confirm | jq .
+
+# The RETIRED_INSTANCE diagnostics list every instance that must be re-registered.
+jq -r '.diagnostics[] | select(.code == "RETIRED_INSTANCE") | .message' /tmp/gamevault-retire.json
+```
+
+This is destructive. Deleting the profile removes every instance endpoint, and
+recreation issues new `*.azurefd.net` hostnames, so each instance must be
+re-registered with `scripts/instance-route.sh register` and have its Table
+Storage CORS rules updated with `scripts/cors-add-origin.sh` for the new URL.
+Re-running the `ci-cd.yml` workflow per instance performs both steps.
 
 ## Automatic Front Door Publication
 
