@@ -27,8 +27,11 @@ param repositoryBranch = 'main'
 param corsAllowedOrigins = []
 
 param tags = {
-  application: 'GameVault Tracker'
+  application: 'GameVault Tracker Platform'
   environment: 'prod'
   managedBy: 'Bicep'
   repository: 'gamevault-tracker-azure'
 }
+
+param platformOwner = 'gamevault-prod'
+param costCenter = 'gamevault-platform'

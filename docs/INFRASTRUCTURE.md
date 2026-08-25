@@ -47,6 +47,35 @@ Use `scripts/instance-route.sh status` to inspect a route’s HTTP health,
 capacity, last lifecycle deployment, and orphaned-instance indication. Use
 `unregister --confirm` before deleting a retired instance resource group.
 
+## Shared Service Operations
+
+The shared-scale path publishes one environment-level address from the
+dedicated shared Front Door endpoint (`https://<gvt>-<environment>-shared...azurefd.net`).
+Use `./scripts/shared-service.sh status --environment <env> ...` to retrieve
+the current shared public URL, Static Web Apps origin hostname, Front Door
+profile ID, endpoint ID, route health, WAF mode, logical-instance count, and
+constant-resource inventory counts.
+
+Health and protection are centralized on the shared Front Door profile. The
+shared endpoint uses the `og-shared` origin group, `origin-shared` Static Web
+Apps origin, the lower-priority `origin-shared-maintenance` fallback origin,
+HTTPS redirect, and a dedicated `/.auth/*` route with caching and compression
+left unconfigured. The Static Web Apps origin host header remains the SWA
+default hostname; redirect-host preservation for future sign-in flows requires
+a custom domain and is intentionally deferred.
+
+Diagnostics for access logs, health probes, and WAF events are written to the
+platform Log Analytics workspace reported by `infra/platform/main.bicep`
+outputs. The `gvt-origin-health-shared` metric alert evaluates the shared
+endpoint/origin group every minute over a five-minute window and sends
+notifications through the platform action group (`alertActionGroupId`).
+
+For constant-resource evidence (SC-010), compare the `resourceCounts` object
+from `./scripts/shared-service.sh inventory ...` before and after logical
+instance operations. The expected shared inventory is one Static Web App, one
+shared Front Door endpoint, one origin group, one application origin, and the
+same shared route set regardless of logical-instance count.
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                           Azure Resource Group                          │

@@ -1,20 +1,15 @@
-name: Instance deployment and Front Door publication
+name: Shared service deployment
 
 on:
   push:
     branches:
       - main
   pull_request:
-    types: [opened, synchronize, reopened, closed]
+    types: [opened, synchronize, reopened]
     branches:
       - main
   workflow_dispatch:
     inputs:
-      instance_id:
-        description: 'Instance ID for deployment (leave empty to generate new, or provide existing ID to redeploy)'
-        required: false
-        type: string
-        default: ''
       environment:
         description: 'Environment to deploy'
         required: false
@@ -25,100 +20,102 @@ on:
           - staging
         default: 'prod'
 
-# Environment variables for infrastructure deployment
 env:
   AZURE_LOCATION: westeurope
-  BICEP_FILE: infra/main.bicep
+  DEPLOYMENT_ENVIRONMENT: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'prod' }}
+  VITE_AZURE_GAMES_TABLE_NAME: games
+  VITE_AZURE_CATEGORIES_TABLE_NAME: categories
 
 jobs:
-  # ============================================================================
-  # Infrastructure Deployment Job
-  # ============================================================================
-  deploy_infrastructure:
-    if: github.event_name != 'pull_request' || github.event.action != 'closed' || github.event_name == 'workflow_dispatch'
+  pr_validation:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    name: Deploy Infrastructure
-    outputs:
-      instanceId: ${{ steps.set_instance.outputs.instanceId }}
-      resourceGroup: ${{ steps.set_instance.outputs.resourceGroup }}
-      environment: ${{ steps.set_instance.outputs.environment }}
-      storageAccountName: ${{ steps.deploy.outputs.storageAccountName }}
-      staticWebAppName: ${{ steps.deploy.outputs.staticWebAppName }}
-      staticWebAppDefaultHostname: ${{ steps.deploy.outputs.staticWebAppDefaultHostname }}
-      staticWebAppUrl: ${{ steps.deploy.outputs.staticWebAppUrl }}
-      gamesTableName: ${{ steps.deploy.outputs.gamesTableName }}
-      categoriesTableName: ${{ steps.deploy.outputs.categoriesTableName }}
-    concurrency:
-      group: instance-infrastructure-${{ github.event.inputs.instance_id || github.event.pull_request.number || github.ref_name }}
-      cancel-in-progress: false
+    name: Pull Request Build and Offline Contracts
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Determine Instance ID and Environment
-        id: set_instance
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          INPUT_ENVIRONMENT: ${{ inputs.environment }}
-          INPUT_INSTANCE_ID: ${{ inputs.instance_id }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: ./scripts/pipeline/infrastructure/determine-instance.sh
-
-      - name: Azure Login
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS_SPONSORSHIP }}
-
-      - name: Create Resource Group
-        run: ./scripts/pipeline/infrastructure/create-resource-group.sh
-
-      - name: Deploy Infrastructure
-        id: deploy
-        run: ./scripts/pipeline/infrastructure/deploy-infrastructure.sh
-
-      - name: Configure Storage CORS
-        env:
-          STORAGE_ACCOUNT: ${{ steps.deploy.outputs.storageAccountName }}
-          WEB_APP_URL: ${{ steps.deploy.outputs.staticWebAppUrl }}
-        run: ./scripts/pipeline/infrastructure/configure-storage-cors.sh
-
-      - name: Display Deployment Summary
-        env:
-          INSTANCE_ID: ${{ steps.deploy.outputs.instanceId }}
-          STATIC_WEB_APP: ${{ steps.deploy.outputs.staticWebAppName }}
-          STORAGE_ACCOUNT: ${{ steps.deploy.outputs.storageAccountName }}
-          STATIC_WEB_APP_URL: ${{ steps.deploy.outputs.staticWebAppUrl }}
-        run: ./scripts/pipeline/infrastructure/display-deployment-summary.sh
-
-  # ============================================================================
-  # Build and Deploy Application Job
-  # ============================================================================
-  build_and_deploy_job:
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed') || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    name: Build and Deploy Job
-    needs: deploy_infrastructure
-    outputs:
-      staticWebAppOriginHostname: ${{ steps.validate_swa.outputs.deployedHostname }}
-    concurrency:
-      group: instance-route-${{ needs.deploy_infrastructure.outputs.instanceId }}
-      cancel-in-progress: false
-    env:
-      STATIC_WEB_APP: ${{ needs.deploy_infrastructure.outputs.staticWebAppName }}
-      STATIC_WEB_APP_DEFAULT_HOSTNAME: ${{ needs.deploy_infrastructure.outputs.staticWebAppDefaultHostname }}
-      STORAGE_ACCOUNT: ${{ needs.deploy_infrastructure.outputs.storageAccountName }}
-      AZURE_RESOURCE_GROUP: ${{ needs.deploy_infrastructure.outputs.resourceGroup }}
-
-    steps:
-
       - uses: actions/checkout@v4
         with:
           submodules: true
           lfs: false
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Application
+        run: npm run build
+
+      - name: Run Offline Contracts
+        run: |
+          ./scripts/shared-service.sh validate --environment dev --local-only >/dev/null
+          bash tests/infrastructure/contracts/offline-validation.sh
+
+  shared_deployment:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    name: Deploy Shared Service
+    environment:
+      name: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'prod' }}
+    outputs:
+      sharedPublicUrl: ${{ steps.report_shared.outputs.sharedPublicUrl }}
+      publishedUrl: ${{ steps.report_shared.outputs.publishedUrl }}
+      environment: ${{ steps.resolve_shared.outputs.environment }}
+    concurrency:
+      group: shared-service-${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'prod' }}
+      cancel-in-progress: false
+    env:
+      SHARED_RESOURCE_GROUP_DEV: ${{ secrets.GAMEVAULT_SHARED_RESOURCE_GROUP_DEV }}
+      SHARED_RESOURCE_GROUP_STAGING: ${{ secrets.GAMEVAULT_SHARED_RESOURCE_GROUP_STAGING }}
+      SHARED_RESOURCE_GROUP_PROD: ${{ secrets.GAMEVAULT_SHARED_RESOURCE_GROUP_PROD }}
+      PLATFORM_RESOURCE_GROUP_DEV: ${{ secrets.GAMEVAULT_PLATFORM_RESOURCE_GROUP_DEV }}
+      PLATFORM_RESOURCE_GROUP_STAGING: ${{ secrets.GAMEVAULT_PLATFORM_RESOURCE_GROUP_STAGING }}
+      PLATFORM_RESOURCE_GROUP_PROD: ${{ secrets.GAMEVAULT_PLATFORM_RESOURCE_GROUP_PROD }}
+      FRONT_DOOR_PROFILE_DEV: ${{ secrets.GAMEVAULT_SHARED_FRONT_DOOR_PROFILE_DEV || secrets.GAMEVAULT_FRONT_DOOR_PROFILE_DEV }}
+      FRONT_DOOR_PROFILE_STAGING: ${{ secrets.GAMEVAULT_SHARED_FRONT_DOOR_PROFILE_STAGING || secrets.GAMEVAULT_FRONT_DOOR_PROFILE_STAGING }}
+      FRONT_DOOR_PROFILE_PROD: ${{ secrets.GAMEVAULT_SHARED_FRONT_DOOR_PROFILE_PROD || secrets.GAMEVAULT_FRONT_DOOR_PROFILE_PROD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          lfs: false
+
+      - name: Initialize Shared Publication Result
+        run: ./scripts/pipeline/shared-service/initialize-shared-result.sh
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Offline Contracts
+        run: |
+          npm run build
+          ./scripts/shared-service.sh validate --environment "$DEPLOYMENT_ENVIRONMENT" --local-only >/dev/null
+          bash tests/infrastructure/contracts/offline-validation.sh
+
       - name: Azure Login
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS_SPONSORSHIP }}
+
+      - name: Resolve Azure Subscription
+        run: echo "SUBSCRIPTION_ID=$(az account show --query id -o tsv)" >> "$GITHUB_ENV"
+
+      - name: Resolve Shared Service Configuration
+        id: resolve_shared
+        run: ./scripts/pipeline/shared-service/resolve-shared-configuration.sh
+
+      - name: Validate, What-If, and Deploy Shared Service
+        id: deploy_shared
+        run: ./scripts/pipeline/shared-service/deploy-shared-service.sh
 
       - name: Generate SAS Token
         id: generate_sas
@@ -128,167 +125,63 @@ jobs:
         id: get_token
         run: ./scripts/pipeline/application/get-swa-deployment-token.sh
 
-      - name: Debug Environment Variables
-        env:
-          SAS_TOKEN: ${{ steps.generate_sas.outputs.sas_token }}
-          VITE_AZURE_STORAGE_ACCOUNT_NAME: ${{ needs.deploy_infrastructure.outputs.storageAccountName }}
-          VITE_AZURE_GAMES_TABLE_NAME: ${{ needs.deploy_infrastructure.outputs.gamesTableName }}
-          VITE_AZURE_CATEGORIES_TABLE_NAME: ${{ needs.deploy_infrastructure.outputs.categoriesTableName }}
-        run: ./scripts/pipeline/application/debug-build-environment.sh
-
       - name: Create Production Environment File
         env:
-          VITE_AZURE_STORAGE_ACCOUNT_NAME: ${{ needs.deploy_infrastructure.outputs.storageAccountName }}
+          VITE_AZURE_STORAGE_ACCOUNT_NAME: ${{ steps.deploy_shared.outputs.storageAccountName }}
           VITE_AZURE_STORAGE_SAS_TOKEN: ${{ steps.generate_sas.outputs.sas_token }}
-          VITE_AZURE_GAMES_TABLE_NAME: ${{ needs.deploy_infrastructure.outputs.gamesTableName }}
-          VITE_AZURE_CATEGORIES_TABLE_NAME: ${{ needs.deploy_infrastructure.outputs.categoriesTableName }}
+          VITE_AZURE_GAMES_TABLE_NAME: ${{ env.VITE_AZURE_GAMES_TABLE_NAME }}
+          VITE_AZURE_CATEGORIES_TABLE_NAME: ${{ env.VITE_AZURE_CATEGORIES_TABLE_NAME }}
         run: ./scripts/pipeline/application/create-production-environment-file.sh
 
-      - name: Build And Deploy
+      - name: Build And Deploy Shared Application
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ steps.get_token.outputs.swa_token }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: "upload"
-          ###### Repository/Build Configurations ######
           app_location: "/"
           api_location: ""
           output_location: "dist"
-          production_branch: ${{ github.base_ref || github.ref_name }}
-          ###### End of Repository/Build Configurations ######
+          production_branch: ${{ github.ref_name }}
 
-      - name: Validate Static Web App Deployment
+      - name: Validate Shared Static Web App Deployment
         id: validate_swa
         env:
           DEPLOYED_URL: ${{ steps.builddeploy.outputs.static_web_app_url }}
           EVENT_NAME: ${{ github.event_name }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ''
         run: ./scripts/pipeline/application/validate-static-web-app-deployment.sh
 
       - name: Configure Static Web App Settings
         env:
-          VITE_AZURE_STORAGE_ACCOUNT_NAME: ${{ needs.deploy_infrastructure.outputs.storageAccountName }}
+          VITE_AZURE_STORAGE_ACCOUNT_NAME: ${{ steps.deploy_shared.outputs.storageAccountName }}
           VITE_AZURE_STORAGE_SAS_TOKEN: ${{ steps.generate_sas.outputs.sas_token }}
-          VITE_AZURE_GAMES_TABLE_NAME: ${{ needs.deploy_infrastructure.outputs.gamesTableName }}
-          VITE_AZURE_CATEGORIES_TABLE_NAME: ${{ needs.deploy_infrastructure.outputs.categoriesTableName }}
+          VITE_AZURE_GAMES_TABLE_NAME: ${{ env.VITE_AZURE_GAMES_TABLE_NAME }}
+          VITE_AZURE_CATEGORIES_TABLE_NAME: ${{ env.VITE_AZURE_CATEGORIES_TABLE_NAME }}
         run: ./scripts/pipeline/application/configure-static-web-app-settings.sh
 
-  # ============================================================================
-  # Serialized publication job
-  # ============================================================================
-  publish_front_door:
-    environment:
-      name: ${{ needs.deploy_infrastructure.outputs.environment }}
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed') || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    name: Publish Front Door Route
-    needs:
-      - deploy_infrastructure
-      - build_and_deploy_job
-    outputs:
-      publishedUrl: ${{ steps.publish_result.outputs.publishedUrl }}
-    concurrency:
-      # All instances in an environment share one Front Door profile/WAF
-      # association collection, so publication is serialized per profile.
-      group: front-door-publication-${{ needs.deploy_infrastructure.outputs.environment }}
-      cancel-in-progress: false
-    env:
-      INSTANCE_ID: ${{ needs.deploy_infrastructure.outputs.instanceId }}
-      STATIC_WEB_APP: ${{ needs.deploy_infrastructure.outputs.staticWebAppName }}
-      STATIC_WEB_APP_DEFAULT_HOSTNAME: ${{ needs.deploy_infrastructure.outputs.staticWebAppDefaultHostname }}
-      STATIC_WEB_APP_ORIGIN_HOSTNAME: ${{ needs.build_and_deploy_job.outputs.staticWebAppOriginHostname }}
-      STORAGE_ACCOUNT: ${{ needs.deploy_infrastructure.outputs.storageAccountName }}
-      AZURE_RESOURCE_GROUP: ${{ needs.deploy_infrastructure.outputs.resourceGroup }}
-      DEPLOYMENT_ENVIRONMENT: ${{ needs.deploy_infrastructure.outputs.environment }}
-      PLATFORM_RESOURCE_GROUP_DEV: ${{ secrets.GAMEVAULT_PLATFORM_RESOURCE_GROUP_DEV }}
-      PLATFORM_RESOURCE_GROUP_STAGING: ${{ secrets.GAMEVAULT_PLATFORM_RESOURCE_GROUP_STAGING }}
-      PLATFORM_RESOURCE_GROUP_PROD: ${{ secrets.GAMEVAULT_PLATFORM_RESOURCE_GROUP_PROD }}
-      FRONT_DOOR_PROFILE_DEV: ${{ secrets.GAMEVAULT_FRONT_DOOR_PROFILE_DEV }}
-      FRONT_DOOR_PROFILE_STAGING: ${{ secrets.GAMEVAULT_FRONT_DOOR_PROFILE_STAGING }}
-      FRONT_DOOR_PROFILE_PROD: ${{ secrets.GAMEVAULT_FRONT_DOOR_PROFILE_PROD }}
-    steps:
-      - uses: actions/checkout@v4
+      - name: Verify Shared Service
+        run: ./scripts/pipeline/shared-service/verify-shared-service.sh
 
-      - name: Initialize Publication Result
-        run: ./scripts/pipeline/front-door/initialize-publication-result.sh
+      - name: Report Shared Service
+        id: report_shared
+        run: ./scripts/pipeline/shared-service/report-shared-service.sh
 
-      - name: Azure Login
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS_SPONSORSHIP }}
-
-      - name: Resolve Environment Platform Configuration
-        id: resolve_platform
-        run: ./scripts/pipeline/front-door/resolve-platform-configuration.sh
-
-      - name: Validate Publication Inputs
-        id: preflight
-        run: ./scripts/pipeline/front-door/validate-publication-inputs.sh
-
-      - name: Register Instance Front Door Route
-        id: register_route
-        run: ./scripts/pipeline/front-door/register-instance-route.sh
-
-      - name: Configure Front Door Table CORS
-        env:
-          ENDPOINT_URL: ${{ steps.register_route.outputs.endpointUrl }}
-        run: ./scripts/pipeline/front-door/configure-table-cors.sh
-
-      - name: Verify Published Front Door Route
-        run: ./scripts/pipeline/front-door/verify-published-route.sh
-
-      - name: Report Published Route
-        id: publish_result
-        run: ./scripts/pipeline/front-door/report-published-route.sh
-
-      - name: Retain Route Registration Artifact
+      - name: Retain Shared Service Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: route-registration-${{ needs.deploy_infrastructure.outputs.instanceId }}
+          name: shared-service-${{ env.DEPLOYMENT_ENVIRONMENT }}-${{ github.run_id }}
           if-no-files-found: warn
           path: |
-            publication-result.json
-            route-registration.json
-            route-verification.json
-            route-forwarding-gateway.json
-
-  # ============================================================================
-  # Close Pull Request Job
-  # ============================================================================
-  close_pull_request_job:
-    if: github.event_name == 'pull_request' && github.event.action == 'closed'
-    runs-on: ubuntu-latest
-    name: Close Pull Request Job
-    steps:
-      - name: Determine PR Instance
-        id: pr_instance
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: ./scripts/pipeline/pull-request/determine-instance.sh
-
-      - name: Azure Login
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS_SPONSORSHIP }}
-
-      - name: Find and Close Staging Environment
-        id: find_swa
-        env:
-          RESOURCE_GROUP: ${{ steps.pr_instance.outputs.resourceGroup }}
-        run: ./scripts/pipeline/pull-request/find-static-web-app.sh
-
-      - name: Close Pull Request
-        if: steps.find_swa.outputs.found == 'true'
-        id: closepullrequest
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ steps.find_swa.outputs.swa_token }}
-          action: "close"
-
-      - name: Delete PR Resource Group
-        if: steps.pr_instance.outputs.resourceGroup != ''
-        env:
-          RESOURCE_GROUP: ${{ steps.pr_instance.outputs.resourceGroup }}
-        run: ./scripts/pipeline/pull-request/delete-resource-group.sh
+            shared-publication-result.json
+            shared-validation.json
+            shared-what-if.json
+            shared-deployment.json
+            shared-route-verification.json
+            shared-inventory-before.json
+            shared-inventory-after.json
+            shared-forwarding-gateway.json
+            public/staticwebapp.config.json
+            dist/staticwebapp.config.json

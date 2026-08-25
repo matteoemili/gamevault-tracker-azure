@@ -50,6 +50,38 @@
               "type": "string",
               "enum": ["Unknown", "Healthy", "Degraded", "Unavailable"]
             },
+            "forwardingGateway": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Direct-origin hardening state. BootstrapPending means the generated config must be included in the next SWA rebuild/upload.",
+              "required": ["state", "configFile", "directOriginAccess", "requiredHeaderName", "allowedForwardedHost"],
+              "properties": {
+                "state": {
+                  "type": "string",
+                  "enum": ["Unknown", "BootstrapPending", "Restricted", "ConfigUnavailable", "PublicRouteUnhealthy"]
+                },
+                "configFile": {
+                  "oneOf": [
+                    { "type": "null" },
+                    { "type": "string", "minLength": 1 }
+                  ]
+                },
+                "directOriginAccess": {
+                  "type": "string",
+                  "enum": ["Unknown", "Allowed", "Denied"]
+                },
+                "requiredHeaderName": {
+                  "type": "string",
+                  "const": "X-Azure-FDID"
+                },
+                "allowedForwardedHost": {
+                  "oneOf": [
+                    { "type": "null" },
+                    { "type": "string", "minLength": 1 }
+                  ]
+                }
+              }
+            },
             "logicalInstanceCount": { "type": "integer", "minimum": 0 },
             "resourceCounts": {
               "type": "object",

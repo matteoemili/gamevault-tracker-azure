@@ -117,6 +117,8 @@ module monitoring 'modules/monitoring.bicep' = {
   params: {
     location: location
     frontDoorProfileName: frontDoorProfileName
+    environment: environment
+    baseName: baseName
     tags: baseTags
     alertRecipientEmails: alertRecipientEmails
   }
@@ -184,6 +186,9 @@ output workspaceName string = monitoring.outputs.workspaceName
 
 @description('The action group receiving shared platform alerts')
 output alertActionGroupId string = monitoring.outputs.actionGroupId
+
+@description('The deterministic shared endpoint name monitored by platform alerts and diagnostics')
+output monitoredSharedEndpointName string = monitoring.outputs.monitoredSharedEndpointName
 
 @description('The budget resource ID when monthlyBudgetAmount is nonzero')
 output budgetId string = costManagement.outputs.budgetId

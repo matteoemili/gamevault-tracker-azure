@@ -1,6 +1,10 @@
 // ============================================================================
 // GameVault Tracker - Infrastructure as Code
 // ============================================================================
+// SUPERSEDED NOTICE: This template is an explicit legacy-only path for existing
+// per-instance deployments. It is not reachable from the shared persistent
+// deployment path and may be retired only by a separate approved feature.
+//
 // This Bicep template provisions all Azure resources required for the
 // GameVault Tracker application:
 // - Azure Storage Account with Table Service

@@ -45,8 +45,11 @@ SHARED_DIR="$PROJECT_ROOT/infra/shared"
 PLATFORM_DIR="$PROJECT_ROOT/infra/platform"
 SHARED_TEMPLATE="$SHARED_DIR/main.bicep"
 ROUTE_TEMPLATE="$PLATFORM_DIR/shared-route.bicep"
+FORWARDING_GATEWAY_ARTIFACT="$PROJECT_ROOT/shared-forwarding-gateway.json"
+STATICWEBAPP_CONFIG_FILE="$PROJECT_ROOT/public/staticwebapp.config.json"
+STATICWEBAPP_DIST_CONFIG_FILE="$PROJECT_ROOT/dist/staticwebapp.config.json"
 
-# shellcheck source=lib/azure-common.sh
+# shellcheck source=scripts/lib/azure-common.sh
 . "$SCRIPT_DIR/lib/azure-common.sh"
 
 DATA_KEY="sharedService"
@@ -71,6 +74,18 @@ deployments.
 USAGE
 }
 
+action_label() {
+  case "$1" in
+    validate) echo "validate" ;;
+    what-if) echo "what-if" ;;
+    deploy) echo "deploy" ;;
+    verify) echo "verify" ;;
+    status) echo "status" ;;
+    inventory) echo "inventory" ;;
+    *) echo "validate" ;;
+  esac
+}
+
 ACTION="${1:-}"
 [ -n "$ACTION" ] || { usage; exit 2; }
 shift || true
@@ -79,7 +94,7 @@ case "$ACTION" in
   validate|what-if|deploy|verify|status|inventory) ;;
   *)
     usage
-    fail_fast "$DATA_KEY" "$ACTION" "$(operation_id shared unknown)" "UNKNOWN_ACTION" "Unknown action: $ACTION"
+    fail_fast "$DATA_KEY" "$(action_label "$ACTION")" "$(operation_id shared unknown)" "UNKNOWN_ACTION" "Unknown action: $ACTION"
     ;;
 esac
 
@@ -112,6 +127,8 @@ while [ "$#" -gt 0 ]; do
       ;;
   esac
 done
+
+: "$NON_INTERACTIVE"
 
 OP_ID="$(operation_id shared "${ENVIRONMENT:-unknown}")"
 
@@ -148,8 +165,12 @@ if [ "$SHARED_RESOURCE_GROUP" != "" ] && [ "$SHARED_RESOURCE_GROUP" = "$PLATFORM
   fail_fast "$DATA_KEY" "$ACTION" "$OP_ID" "SCOPE_CONFLICT" "--shared-resource-group must differ from --platform-resource-group"
 fi
 
-SCRATCH_DIR="$(mktemp -d)"
-trap 'rm -rf "$SCRATCH_DIR"' EXIT
+SCRATCH_PARENT="$PROJECT_ROOT/.shared-service-scratch"
+SCRATCH_DIR="$SCRATCH_PARENT/$$"
+mkdir -p "$SCRATCH_PARENT"
+rm -rf "$SCRATCH_DIR"
+mkdir "$SCRATCH_DIR" || fail_fast "$DATA_KEY" "$ACTION" "$OP_ID" "SCRATCH_CREATE_FAILED" "Unable to create local scratch directory"
+trap 'rm -rf "$SCRATCH_DIR"; rmdir "$SCRATCH_PARENT" 2>/dev/null || true' EXIT
 
 # ----------------------------------------------------------------------------
 # Bicep helpers
@@ -174,7 +195,9 @@ shared_endpoint_name() {
 
 SHARED_ORIGIN_GROUP_NAME="og-shared"
 SHARED_ORIGIN_NAME="origin-shared"
+SHARED_MAINTENANCE_ORIGIN_NAME="origin-shared-maintenance"
 SHARED_ROUTE_NAME="route-shared"
+SHARED_AUTH_ROUTE_NAME="route-shared-auth"
 
 # ----------------------------------------------------------------------------
 # Azure helpers
@@ -192,6 +215,76 @@ shared_swa_hostname() {
     --resource-group "$SHARED_RESOURCE_GROUP" \
     --subscription "$SUBSCRIPTION_ID" \
     --query "[0].defaultHostname" -o tsv 2>/dev/null
+}
+
+shared_storage_name() {
+  az storage account list \
+    --resource-group "$SHARED_RESOURCE_GROUP" \
+    --subscription "$SUBSCRIPTION_ID" \
+    --query "[0].name" -o tsv 2>/dev/null
+}
+
+shared_endpoint_id() {
+  endpoint_name="$(shared_endpoint_name)"
+  echo "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${PLATFORM_RESOURCE_GROUP}/providers/Microsoft.Cdn/profiles/${FRONT_DOOR_PROFILE}/afdEndpoints/${endpoint_name}"
+}
+
+waf_policy_id() {
+  echo "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${PLATFORM_RESOURCE_GROUP}/providers/Microsoft.Network/frontdoorWebApplicationFirewallPolicies/$(echo "$FRONT_DOOR_PROFILE" | tr -d '-')"
+}
+
+shared_waf_security_policy_name() {
+  echo "waf-shared-${ENVIRONMENT}"
+}
+
+waf_associated_endpoint_ids() {
+  endpoint_id="$(shared_endpoint_id)"
+  policy_name="$(shared_waf_security_policy_name)"
+
+  az afd endpoint list \
+    --resource-group "$PLATFORM_RESOURCE_GROUP" \
+    --profile-name "$FRONT_DOOR_PROFILE" \
+    --subscription "$SUBSCRIPTION_ID" -o json >/dev/null 2>/dev/null || return 1
+
+  security_policies_json=$(az afd security-policy list \
+    --resource-group "$PLATFORM_RESOURCE_GROUP" \
+    --profile-name "$FRONT_DOOR_PROFILE" \
+    --subscription "$SUBSCRIPTION_ID" -o json 2>/dev/null) || return 1
+
+  echo "$security_policies_json" | jq -c \
+    --arg policyName "$policy_name" \
+    --arg endpointId "$endpoint_id" '
+    [ .[]
+      | select((.name // "" | ascii_downcase) == ($policyName | ascii_downcase))
+      | .parameters.associations[]?.domains[]?.id
+    ]
+    + [$endpointId]
+    | map(ascii_downcase)
+    | unique'
+}
+
+waf_security_policy_name() {
+  shared_waf_security_policy_name
+}
+
+maintenance_origin_hostname() {
+  deployments_json=$(az deployment group list \
+    --resource-group "$PLATFORM_RESOURCE_GROUP" \
+    --subscription "$SUBSCRIPTION_ID" -o json 2>/dev/null) || {
+      echo ""
+      return 0
+    }
+  deployment_name=$(echo "$deployments_json" | jq -r --arg prefix "gvt-platform-${ENVIRONMENT}-" \
+    '[.[] | select(.name | startswith($prefix))] | sort_by(.properties.timestamp) | last.name // empty')
+  if [ -z "$deployment_name" ]; then
+    echo ""
+    return 0
+  fi
+  az deployment group show \
+    --resource-group "$PLATFORM_RESOURCE_GROUP" \
+    --subscription "$SUBSCRIPTION_ID" \
+    --name "$deployment_name" \
+    --query "properties.outputs.maintenanceOriginHostName.value" -o tsv 2>/dev/null
 }
 
 logical_instance_count() {
@@ -219,10 +312,13 @@ shared_service_object() {
   inventory_json="$1"
   public_url="$2"
   health_state="$3"
+  forwarding_state="${4:-Unknown}"
+  forwarding_config_file="${5:-}"
+  direct_origin_access="${6:-Unknown}"
 
   swa_id=$(echo "$inventory_json" | jq -r '.staticWebApps[0] // ""')
   storage_id=$(echo "$inventory_json" | jq -r '.storageAccounts[0] // ""')
-  storage_name=$(echo "$storage_id" | sed 's#.*/##')
+  storage_name="${storage_id##*/}"
   endpoint_name="$(shared_endpoint_name)"
   endpoint_id=$(echo "$inventory_json" | jq -r --arg n "$endpoint_name" '[.endpoints[] | select(test("/" + $n + "$"))][0] // ""')
   origin_host=$(shared_swa_hostname 2>/dev/null || echo "")
@@ -237,8 +333,8 @@ shared_service_object() {
     [ "$profile_id" != "None" ] || profile_id=""
   fi
 
-  # Only the shared origin group's origins count as application origins; a
-  # legacy origin in another group must never inflate this number.
+  # Only the shared Static Web Apps origin counts as an application origin;
+  # the lower-priority maintenance fallback is operational plumbing.
   jq -n \
     --arg environment "$ENVIRONMENT" \
     --arg resourceGroupName "$SHARED_RESOURCE_GROUP" \
@@ -249,9 +345,13 @@ shared_service_object() {
     --arg originHostName "${origin_host:-}" \
     --arg healthState "$health_state" \
     --arg publicUrl "$public_url" \
+    --arg forwardingState "$forwarding_state" \
+    --arg forwardingConfigFile "$forwarding_config_file" \
+    --arg directOriginAccess "$direct_origin_access" \
     --argjson logicalInstanceCount "$instance_count" \
     --argjson inventory "$inventory_json" \
     --arg originGroupName "$SHARED_ORIGIN_GROUP_NAME" \
+    --arg originName "$SHARED_ORIGIN_NAME" \
     '{
       environment: $environment,
       resourceGroupName: $resourceGroupName,
@@ -262,6 +362,13 @@ shared_service_object() {
       publicUrl: (if $publicUrl == "" then null else $publicUrl end),
       originHostName: $originHostName,
       healthState: $healthState,
+      forwardingGateway: {
+        state: $forwardingState,
+        configFile: (if $forwardingConfigFile == "" then null else $forwardingConfigFile end),
+        directOriginAccess: $directOriginAccess,
+        requiredHeaderName: "X-Azure-FDID",
+        allowedForwardedHost: (if $publicUrl == "" then null else ($publicUrl | sub("^https://"; "")) end)
+      },
       logicalInstanceCount: $logicalInstanceCount,
       resourceCounts: {
         staticWebApps: ($inventory.counts.staticWebApps // 0),
@@ -269,7 +376,7 @@ shared_service_object() {
         endpoints: ($inventory.counts.endpoints // 0),
         routes: ($inventory.counts.routes // 0),
         originGroups: ($inventory.counts.originGroups // 0),
-        applicationOrigins: ([$inventory.origins[]? | select(contains("/originGroups/" + $originGroupName + "/"))] | length)
+        applicationOrigins: ([$inventory.origins[]? | select(contains("/originGroups/" + $originGroupName + "/origins/" + $originName))] | length)
       }
     }'
 }
@@ -293,16 +400,21 @@ current_public_url() {
   fi
 }
 
-ensure_shared_resource_group() {  log_info "Ensuring shared resource group exists: $SHARED_RESOURCE_GROUP"
+ensure_shared_resource_group() {
+  log_info "Ensuring shared resource group exists: $SHARED_RESOURCE_GROUP"
   az group show --name "$SHARED_RESOURCE_GROUP" --subscription "$SUBSCRIPTION_ID" >/dev/null 2>&1 && return 0
-  [ -n "$LOCATION" ] || fail_fast "$DATA_KEY" "$ACTION" "$OP_ID" "MISSING_REQUIRED_OPTION" "shared resource group '$SHARED_RESOURCE_GROUP' does not exist; --location is required to create it"
+  if [ -z "$LOCATION" ]; then
+    echo "shared resource group '$SHARED_RESOURCE_GROUP' does not exist; --location is required to create it" >&2
+    return 1
+  fi
   log_info "Creating shared resource group in $LOCATION"
   az group create \
     --name "$SHARED_RESOURCE_GROUP" \
     --location "$LOCATION" \
     --subscription "$SUBSCRIPTION_ID" \
     --tags application="GameVault Tracker" environment="$ENVIRONMENT" managedBy="Bicep" component="shared-service" \
-    >/dev/null
+    >/dev/null || return 1
+  return 0
 }
 
 azure_validate_shared() {
@@ -338,23 +450,76 @@ whatif_change_count() {
 # modify a legacy per-instance resource. FR-014 and SC-008 require that
 # introducing the shared service never touches an existing instance.
 assert_no_legacy_mutation() {
-  [ -f "$SCRATCH_DIR/whatif-raw.json" ] || return 0
-  offenders=$(jq -r '
+  : > "$SCRATCH_DIR/legacy-mutation.err"
+  echo "LEGACY_MUTATION_DETECTED" > "$SCRATCH_DIR/legacy-mutation.code"
+  if [ ! -f "$SCRATCH_DIR/whatif-raw.json" ]; then
+    echo "WHATIF_PREVIEW_MISSING" > "$SCRATCH_DIR/legacy-mutation.code"
+    echo "What-if preview was not captured; refusing to proceed without legacy-mutation evidence" > "$SCRATCH_DIR/legacy-mutation.err"
+    return 1
+  fi
+
+  endpoint_name="$(shared_endpoint_name)"
+  security_policy_name="$(shared_waf_security_policy_name)"
+  offenders=$(jq -r \
+    --arg endpointName "$endpoint_name" \
+    --arg securityPolicyName "$security_policy_name" \
+    --arg originGroupName "$SHARED_ORIGIN_GROUP_NAME" \
+    --arg originName "$SHARED_ORIGIN_NAME" \
+    --arg maintenanceOriginName "$SHARED_MAINTENANCE_ORIGIN_NAME" \
+    --arg routeName "$SHARED_ROUTE_NAME" \
+    --arg authRouteName "$SHARED_AUTH_ROUTE_NAME" '
+    def leaf_name: (.resourceId // "" | split("/") | last | ascii_downcase);
+    def is_shared_leaf:
+      (leaf_name == ($endpointName | ascii_downcase)) or
+      (leaf_name == ($originGroupName | ascii_downcase)) or
+      (leaf_name == ($originName | ascii_downcase)) or
+      (leaf_name == ($maintenanceOriginName | ascii_downcase)) or
+      (leaf_name == ($routeName | ascii_downcase)) or
+      (leaf_name == ($authRouteName | ascii_downcase));
+    def is_security_policy: (.resourceId // "" | test("/securityPolicies/"; "i"));
+    def is_shared_security_policy:
+      is_security_policy and (leaf_name == ($securityPolicyName | ascii_downcase));
     [ .changes[]?
       | select(.changeType == "Delete" or .changeType == "Modify")
-      | .resourceId
       | select(
-          (test("/originGroups/og-shared";  "i") | not) and
-          (test("-shared($|/)";             "i") | not)
+          if .changeType == "Modify" then
+            ((is_shared_leaf and (is_security_policy | not)) or is_shared_security_policy) | not
+          else
+            (is_shared_leaf and (is_security_policy | not)) | not
+          end
         )
+      | (.resourceId // "")
     ] | unique | join(", ")
-  ' "$SCRATCH_DIR/whatif-raw.json" 2>/dev/null)
+  ' "$SCRATCH_DIR/whatif-raw.json" 2>/dev/null) || {
+    echo "WHATIF_PREVIEW_INVALID" > "$SCRATCH_DIR/legacy-mutation.code"
+    echo "What-if preview could not be parsed; refusing to proceed without legacy-mutation evidence" > "$SCRATCH_DIR/legacy-mutation.err"
+    return 1
+  }
 
   if [ -n "$offenders" ] && [ "$offenders" != "null" ]; then
-    fail_fast "$DATA_KEY" "$ACTION" "$OP_ID" "LEGACY_MUTATION_DETECTED" \
-      "What-if preview would delete or modify non-shared resources; refusing to proceed: $offenders"
+    echo "What-if preview would delete or modify non-shared resources; refusing to proceed: $offenders" > "$SCRATCH_DIR/legacy-mutation.err"
+    return 1
   fi
+  return 0
 }
+
+legacy_mutation_code() {
+  cat "$SCRATCH_DIR/legacy-mutation.code" 2>/dev/null || echo "LEGACY_MUTATION_DETECTED"
+}
+
+legacy_mutation_message() {
+  cat "$SCRATCH_DIR/legacy-mutation.err" 2>/dev/null || echo "What-if preview failed the legacy-mutation guard"
+}
+
+if [ -n "${SHARED_SERVICE_TEST_ASSERT_NO_LEGACY_MUTATION:-}" ]; then
+  cp "$SHARED_SERVICE_TEST_ASSERT_NO_LEGACY_MUTATION" "$SCRATCH_DIR/whatif-raw.json" || \
+    fail_fast "$DATA_KEY" "$ACTION" "$OP_ID" "WHATIF_PREVIEW_MISSING" "Test what-if preview fixture could not be read"
+  if assert_no_legacy_mutation; then
+    emit_json_envelope "$DATA_KEY" "$ACTION" "Succeeded" "$OP_ID" "null"
+    exit 0
+  fi
+  fail_fast "$DATA_KEY" "$ACTION" "$OP_ID" "$(legacy_mutation_code)" "$(legacy_mutation_message)"
+fi
 
 # configure_shared_cors <storage-account-name> <public-url>
 # Allows the shared public origin to call Azure Table Storage from the
@@ -382,6 +547,96 @@ configure_shared_cors() {
     >"$SCRATCH_DIR/cors.out" 2>"$SCRATCH_DIR/cors.err"
 }
 
+write_shared_forwarding_gateway_config() {
+  endpoint_url="$1"
+  endpoint_hostname="$(echo "$endpoint_url" | sed 's#^https://##; s#/$##')"
+  [ -n "$endpoint_hostname" ] || return 1
+
+  front_door_id=$(az afd profile show \
+    --resource-group "$PLATFORM_RESOURCE_GROUP" \
+    --profile-name "$FRONT_DOOR_PROFILE" \
+    --subscription "$SUBSCRIPTION_ID" \
+    --query 'frontDoorId' -o tsv 2>/dev/null)
+
+  if [ -z "$front_door_id" ] || [ "$front_door_id" = "None" ]; then
+    log_warn "could not resolve frontDoorId; skipping forwarding-gateway config generation"
+    return 1
+  fi
+
+  mkdir -p "$(dirname "$FORWARDING_GATEWAY_ARTIFACT")" "$(dirname "$STATICWEBAPP_CONFIG_FILE")"
+
+  jq -n \
+    --arg environment "$ENVIRONMENT" \
+    --arg frontDoorId "$front_door_id" \
+    --arg endpointHostName "$endpoint_hostname" \
+    --arg backendServiceTag 'AzureFrontDoor.Backend' \
+    '{
+      environment: $environment,
+      frontDoorId: $frontDoorId,
+      backendServiceTag: $backendServiceTag,
+      endpointHostName: $endpointHostName,
+      staticWebAppConfig: {
+        forwardingGateway: {
+          requiredHeaders: {"X-Azure-FDID": $frontDoorId},
+          allowedForwardedHosts: [$endpointHostName]
+        }
+      }
+    }' > "$FORWARDING_GATEWAY_ARTIFACT" || return 1
+
+  jq '.staticWebAppConfig' "$FORWARDING_GATEWAY_ARTIFACT" > "$STATICWEBAPP_CONFIG_FILE" || return 1
+  if [ -d "$(dirname "$STATICWEBAPP_DIST_CONFIG_FILE")" ]; then
+    jq '.staticWebAppConfig' "$FORWARDING_GATEWAY_ARTIFACT" > "$STATICWEBAPP_DIST_CONFIG_FILE" || return 1
+  fi
+  log_success "forwarding-gateway config written to $FORWARDING_GATEWAY_ARTIFACT and $STATICWEBAPP_CONFIG_FILE"
+  return 0
+}
+
+probe_url_status() {
+  probe_url="$1"
+  curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "$probe_url" 2>/dev/null
+}
+
+public_route_is_healthy() {
+  public_url="$1"
+  [ -n "$public_url" ] || return 1
+  status_code="$(probe_url_status "$public_url/")"
+  case "$status_code" in
+    2*|3*|503) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+direct_origin_is_denied() {
+  origin_host="$1"
+  [ -n "$origin_host" ] && [ "$origin_host" != "None" ] || return 1
+  status_code="$(probe_url_status "https://${origin_host}/")"
+  case "$status_code" in
+    401|403) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+forwarding_gateway_state() {
+  public_url="$1"
+  origin_host="$2"
+
+  if ! public_route_is_healthy "$public_url"; then
+    echo "PublicRouteUnhealthy|Unknown|FORWARDING_GATEWAY_PUBLIC_ROUTE_UNHEALTHY|Forwarding-gateway configuration was not generated because the shared public URL did not return a healthy or controlled response"
+    return 0
+  fi
+
+  if ! write_shared_forwarding_gateway_config "$public_url"; then
+    echo "ConfigUnavailable|Unknown|FORWARDING_GATEWAY_CONFIG_UNAVAILABLE|Forwarding-gateway configuration could not be generated after route verification"
+    return 0
+  fi
+
+  if direct_origin_is_denied "$origin_host"; then
+    echo "Restricted|Denied|FORWARDING_GATEWAY_RESTRICTED|Direct Static Web Apps origin access is denied and the shared public URL remains healthy"
+  else
+    echo "BootstrapPending|Allowed|FORWARDING_GATEWAY_REUPLOAD_REQUIRED|Forwarding-gateway configuration was generated after route verification; rebuild and re-upload the application so direct-origin access is denied"
+  fi
+}
+
 azure_deploy_shared() {
   deployment_name="gamevault-shared-${ENVIRONMENT}"
   log_info "Creating shared application deployment: $deployment_name"
@@ -395,21 +650,62 @@ azure_deploy_shared() {
     -o json
 }
 
-azure_deploy_route() {
+write_route_parameters_file() {
   swa_name="$1"
+  route_params_file="$2"
+  maintenance_host="$(maintenance_origin_hostname)"
+  enable_maintenance="false"
+  if [ -n "$maintenance_host" ] && [ "$maintenance_host" != "None" ]; then
+    enable_maintenance="true"
+  else
+    maintenance_host=""
+  fi
+  waf_endpoint_ids="$(waf_associated_endpoint_ids)" || return 1
+  waf_security_name="$(waf_security_policy_name)"
+
+  jq -n \
+    --arg environment "$ENVIRONMENT" \
+    --arg baseName "$BASE_NAME" \
+    --arg frontDoorProfileName "$FRONT_DOOR_PROFILE" \
+    --arg sharedResourceGroupName "$SHARED_RESOURCE_GROUP" \
+    --arg staticWebAppName "$swa_name" \
+    --arg maintenanceOriginHostName "$maintenance_host" \
+    --argjson enableMaintenanceFallback "$enable_maintenance" \
+    --arg wafSecurityPolicyName "$waf_security_name" \
+    --argjson wafAssociatedEndpointIds "$waf_endpoint_ids" \
+    '{
+      "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+      contentVersion: "1.0.0.0",
+      parameters: {
+        environment: {value: $environment},
+        baseName: {value: $baseName},
+        frontDoorProfileName: {value: $frontDoorProfileName},
+        sharedResourceGroupName: {value: $sharedResourceGroupName},
+        staticWebAppName: {value: $staticWebAppName},
+        maintenanceOriginHostName: {value: $maintenanceOriginHostName},
+        enableMaintenanceFallback: {value: $enableMaintenanceFallback},
+        wafSecurityPolicyName: {value: $wafSecurityPolicyName},
+        wafAssociatedEndpointIds: {value: $wafAssociatedEndpointIds}
+      }
+    }' > "$route_params_file"
+}
+
+azure_whatif_route() {
+  route_params_file="$1"
+  whatif_change_count "$PLATFORM_RESOURCE_GROUP" "$ROUTE_TEMPLATE" --parameters "@$route_params_file"
+}
+
+azure_deploy_route() {
+  route_params_file="$1"
   deployment_name="gamevault-shared-route-${ENVIRONMENT}"
+
   log_info "Creating shared route deployment: $deployment_name"
   az deployment group create \
     --resource-group "$PLATFORM_RESOURCE_GROUP" \
     --subscription "$SUBSCRIPTION_ID" \
     --name "$deployment_name" \
     --template-file "$ROUTE_TEMPLATE" \
-    --parameters \
-      environment="$ENVIRONMENT" \
-      baseName="$BASE_NAME" \
-      frontDoorProfileName="$FRONT_DOOR_PROFILE" \
-      sharedResourceGroupName="$SHARED_RESOURCE_GROUP" \
-      staticWebAppName="$swa_name" \
+    --parameters "@$route_params_file" \
     --mode Incremental \
     -o json
 }
@@ -459,6 +755,47 @@ verify_control_plane() {
   [ "$route_group" = "$SHARED_ORIGIN_GROUP_NAME" ] \
     || finding "route origin group is '$route_group', expected '$SHARED_ORIGIN_GROUP_NAME'"
 
+  route_patterns=$(echo "$route_json" | jq -r '[.patternsToMatch[]?] | sort | join(",")')
+  [ "$route_patterns" = "/*" ] || finding "shared route patterns are '$route_patterns', expected '/*'"
+
+  endpoint_json=$(az afd endpoint show \
+    --resource-group "$PLATFORM_RESOURCE_GROUP" \
+    --profile-name "$FRONT_DOOR_PROFILE" \
+    --endpoint-name "$endpoint_name" \
+    --subscription "$SUBSCRIPTION_ID" \
+    -o json 2>/dev/null)
+  if [ -z "$endpoint_json" ]; then
+    finding "shared endpoint '$endpoint_name' not found"
+  else
+    endpoint_instance_tag=$(echo "$endpoint_json" | jq -r '.tags.instanceId // ""')
+    [ -z "$endpoint_instance_tag" ] || finding "shared endpoint carries legacy instanceId tag"
+  fi
+
+  auth_route_json=$(az afd route show \
+    --resource-group "$PLATFORM_RESOURCE_GROUP" \
+    --profile-name "$FRONT_DOOR_PROFILE" \
+    --endpoint-name "$endpoint_name" \
+    --route-name "$SHARED_AUTH_ROUTE_NAME" \
+    --subscription "$SUBSCRIPTION_ID" \
+    -o json 2>/dev/null)
+
+  if [ -z "$auth_route_json" ]; then
+    finding "shared auth route '$SHARED_AUTH_ROUTE_NAME' not found on endpoint '$endpoint_name'"
+  else
+    auth_patterns=$(echo "$auth_route_json" | jq -r '[.patternsToMatch[]?] | sort | join(",")')
+    auth_redirect=$(echo "$auth_route_json" | jq -r '.httpsRedirect // ""')
+    auth_forwarding=$(echo "$auth_route_json" | jq -r '.forwardingProtocol // ""')
+    auth_group=$(echo "$auth_route_json" | jq -r '.originGroup.id // ""' | sed 's#.*/##')
+    auth_cache_present=$(echo "$auth_route_json" | jq -r 'has("cacheConfiguration") and (.cacheConfiguration != null)')
+    auth_compression_present=$(echo "$auth_route_json" | jq -r 'has("compressionSettings") and (.compressionSettings != null)')
+    [ "$auth_patterns" = "/.auth/*" ] || finding "auth route patterns are '$auth_patterns', expected '/.auth/*'"
+    [ "$auth_redirect" = "Enabled" ] || finding "auth route httpsRedirect is '$auth_redirect', expected 'Enabled'"
+    [ "$auth_forwarding" = "HttpsOnly" ] || finding "auth route forwardingProtocol is '$auth_forwarding', expected 'HttpsOnly'"
+    [ "$auth_group" = "$SHARED_ORIGIN_GROUP_NAME" ] || finding "auth route origin group is '$auth_group', expected '$SHARED_ORIGIN_GROUP_NAME'"
+    [ "$auth_cache_present" = "false" ] || finding "auth route cacheConfiguration must be unconfigured"
+    [ "$auth_compression_present" = "false" ] || finding "auth route compressionSettings must be unconfigured"
+  fi
+
   expected_host="$(shared_swa_hostname)"
   origins_json=$(az afd origin list \
     --resource-group "$PLATFORM_RESOURCE_GROUP" \
@@ -485,6 +822,35 @@ verify_control_plane() {
   if [ -n "$legacy_origins" ] && [ "$legacy_origins" != "null" ]; then
     finding "unexpected non-shared origin(s) in shared origin group: $legacy_origins"
   fi
+
+  maintenance_host="$(maintenance_origin_hostname)"
+  if [ -n "$maintenance_host" ] && [ "$maintenance_host" != "None" ]; then
+    maintenance_origin=$(echo "$origins_json" | jq -r --arg n "$SHARED_MAINTENANCE_ORIGIN_NAME" '[.[] | select(.name == $n)][0] // empty')
+    if [ -z "$maintenance_origin" ]; then
+      finding "shared maintenance origin '$SHARED_MAINTENANCE_ORIGIN_NAME' not found in group '$SHARED_ORIGIN_GROUP_NAME'"
+    else
+      maintenance_priority=$(echo "$maintenance_origin" | jq -r '.priority // ""')
+      maintenance_actual_host=$(echo "$maintenance_origin" | jq -r '.hostName // ""')
+      [ "$maintenance_priority" = "2" ] || finding "maintenance origin priority is '$maintenance_priority', expected '2'"
+      [ "$maintenance_actual_host" = "$maintenance_host" ] || finding "maintenance origin hostName is '$maintenance_actual_host', expected '$maintenance_host'"
+    fi
+  fi
+
+  endpoint_id="$(shared_endpoint_id)"
+  policy_id="$(waf_policy_id)"
+  security_policy_name="$(shared_waf_security_policy_name)"
+  security_policies_json=$(az afd security-policy list \
+    --resource-group "$PLATFORM_RESOURCE_GROUP" \
+    --profile-name "$FRONT_DOOR_PROFILE" \
+    --subscription "$SUBSCRIPTION_ID" -o json 2>/dev/null) || security_policies_json='[]'
+  waf_covers_shared=$(echo "$security_policies_json" | jq -r --arg endpointId "$endpoint_id" --arg wafPolicyId "$policy_id" --arg policyName "$security_policy_name" '
+    [ .[]
+      | select((.name // "" | ascii_downcase) == ($policyName | ascii_downcase))
+      | select((.parameters.wafPolicy.id // "" | ascii_downcase) == ($wafPolicyId | ascii_downcase))
+      | .parameters.associations[]?.domains[]?.id
+      | select((. | ascii_downcase) == ($endpointId | ascii_downcase))
+    ] | length')
+  [ "$waf_covers_shared" -gt 0 ] || finding "WAF security policy does not associate the shared endpoint"
 
   return "$verify_ok"
 }
@@ -539,24 +905,26 @@ cmd_whatif() {
     err="$(mask_secrets < "$SCRATCH_DIR/whatif.err")"
     fail_fast "$DATA_KEY" "$ACTION" "$OP_ID" "AZURE_WHATIF_FAILED" "Shared application what-if failed: $err"
   fi
-  assert_no_legacy_mutation
+  if ! assert_no_legacy_mutation; then
+    fail_fast "$DATA_KEY" "$ACTION" "$OP_ID" "$(legacy_mutation_code)" "$(legacy_mutation_message)"
+  fi
 
   route_changes=0
   swa_name="$(shared_swa_name)"
   if [ -n "$swa_name" ] && [ "$swa_name" != "None" ]; then
     log_info "Running what-if for the shared route (no resources are mutated)"
-    if ! route_changes="$(whatif_change_count "$PLATFORM_RESOURCE_GROUP" "$ROUTE_TEMPLATE" \
-      --parameters \
-        environment="$ENVIRONMENT" \
-        baseName="$BASE_NAME" \
-        frontDoorProfileName="$FRONT_DOOR_PROFILE" \
-        sharedResourceGroupName="$SHARED_RESOURCE_GROUP" \
-        staticWebAppName="$swa_name" \
-      2>"$SCRATCH_DIR/whatif-route.err")"; then
+    route_params_file="$SCRATCH_DIR/route-parameters-whatif.json"
+    if ! write_route_parameters_file "$swa_name" "$route_params_file" 2>"$SCRATCH_DIR/route-params.err"; then
+      err="$(mask_secrets < "$SCRATCH_DIR/route-params.err")"
+      fail_fast "$DATA_KEY" "$ACTION" "$OP_ID" "ROUTE_PARAMETERS_FAILED" "Shared route parameter resolution failed; endpoint/security-policy reads did not complete: $err"
+    fi
+    if ! route_changes="$(azure_whatif_route "$route_params_file" 2>"$SCRATCH_DIR/whatif-route.err")"; then
       err="$(mask_secrets < "$SCRATCH_DIR/whatif-route.err")"
       fail_fast "$DATA_KEY" "$ACTION" "$OP_ID" "AZURE_WHATIF_FAILED" "Shared route what-if failed: $err"
     fi
-    assert_no_legacy_mutation
+    if ! assert_no_legacy_mutation; then
+      fail_fast "$DATA_KEY" "$ACTION" "$OP_ID" "$(legacy_mutation_code)" "$(legacy_mutation_message)"
+    fi
   else
     log_warn "Shared Static Web App not deployed yet; skipping route what-if"
   fi
@@ -585,16 +953,25 @@ cmd_deploy() {
 
   require_azure_login
   require_subscription "$SUBSCRIPTION_ID"
-  ensure_shared_resource_group
-
-  # Stage 1: capture the pre-mutation inventory. This is both the
-  # constant-resource evidence and the record used to prove legacy
-  # preservation if a later stage fails.
-  before_inventory="$(current_inventory)"
-  echo "$before_inventory" > "$SCRATCH_DIR/inventory-before.json"
 
   # A previously working public address must survive any failure below.
   last_known_url="$(current_public_url)"
+  before_inventory='{
+    "staticWebApps": [],
+    "storageAccounts": [],
+    "endpoints": [],
+    "originGroups": [],
+    "routes": [],
+    "origins": [],
+    "counts": {
+      "staticWebApps": 0,
+      "storageAccounts": 0,
+      "endpoints": 0,
+      "originGroups": 0,
+      "routes": 0,
+      "origins": 0
+    }
+  }'
 
   fail_preserving() {
     code="$1"
@@ -611,18 +988,34 @@ cmd_deploy() {
     exit 1
   }
 
-  # Stage 2: validate before any mutation.
+  # Stage 0: ensure the shared resource group exists. This is the only
+  # pre-validation mutation; failures are reported with a preserving envelope.
+  if ! ensure_shared_resource_group >"$SCRATCH_DIR/group-create.out" 2>"$SCRATCH_DIR/group-create.err"; then
+    err="$(mask_secrets < "$SCRATCH_DIR/group-create.err")"
+    fail_preserving "RESOURCE_GROUP_CREATE_FAILED" "Shared resource group creation failed: $err"
+  fi
+
+  # Stage 1: capture the pre-deployment inventory. This is both the
+  # constant-resource evidence and the record used to prove legacy
+  # preservation if a later stage fails.
+  before_inventory="$(current_inventory)"
+  echo "$before_inventory" > "$SCRATCH_DIR/inventory-before.json"
+
+  # Stage 2: validate the shared application template before route mutation.
   if ! azure_validate_shared >"$SCRATCH_DIR/validate.out" 2>"$SCRATCH_DIR/validate.err"; then
     err="$(mask_secrets < "$SCRATCH_DIR/validate.err")"
     fail_preserving "AZURE_VALIDATION_FAILED" "Deployment validation failed; no resources were changed: $err"
   fi
 
-  # Stage 3: preview, and refuse to proceed if a legacy resource would change.
+  # Stage 3: preview the shared application, and refuse to proceed if a
+  # legacy resource would change.
   if ! whatif_change_count "$SHARED_RESOURCE_GROUP" "$SHARED_TEMPLATE" --parameters "$PARAMS_FILE" >"$SCRATCH_DIR/app-changes" 2>"$SCRATCH_DIR/whatif.err"; then
     err="$(mask_secrets < "$SCRATCH_DIR/whatif.err")"
     fail_preserving "AZURE_WHATIF_FAILED" "Shared application what-if failed: $err"
   fi
-  assert_no_legacy_mutation
+  if ! assert_no_legacy_mutation; then
+    fail_preserving "$(legacy_mutation_code)" "$(legacy_mutation_message)"
+  fi
 
   # Stage 4: deploy the shared application.
   if ! azure_deploy_shared >"$SCRATCH_DIR/deploy-app.json" 2>"$SCRATCH_DIR/deploy-app.err"; then
@@ -640,8 +1033,23 @@ cmd_deploy() {
     fail_preserving "SHARED_ORIGIN_UNRESOLVED" "Unable to resolve the shared Static Web App name after deployment"
   fi
 
-  # Stage 6: deploy the one shared Front Door route.
-  if ! azure_deploy_route "$swa_name" >"$SCRATCH_DIR/deploy-route.json" 2>"$SCRATCH_DIR/deploy-route.err"; then
+  # Stage 6: preview the shared Front Door route in the legacy platform
+  # resource group using the exact parameter file that Stage 7 deploys.
+  route_params_file="$SCRATCH_DIR/route-parameters-deploy.json"
+  if ! write_route_parameters_file "$swa_name" "$route_params_file" 2>"$SCRATCH_DIR/route-params.err"; then
+    err="$(mask_secrets < "$SCRATCH_DIR/route-params.err")"
+    fail_preserving "ROUTE_PARAMETERS_FAILED" "Shared route parameter resolution failed; endpoint/security-policy reads did not complete: $err"
+  fi
+  if ! azure_whatif_route "$route_params_file" >"$SCRATCH_DIR/route-changes" 2>"$SCRATCH_DIR/whatif-route.err"; then
+    err="$(mask_secrets < "$SCRATCH_DIR/whatif-route.err")"
+    fail_preserving "AZURE_WHATIF_FAILED" "Shared route what-if failed: $err"
+  fi
+  if ! assert_no_legacy_mutation; then
+    fail_preserving "$(legacy_mutation_code)" "$(legacy_mutation_message)"
+  fi
+
+  # Stage 7: deploy the one shared Front Door route.
+  if ! azure_deploy_route "$route_params_file" >"$SCRATCH_DIR/deploy-route.json" 2>"$SCRATCH_DIR/deploy-route.err"; then
     err="$(mask_secrets < "$SCRATCH_DIR/deploy-route.err")"
     fail_preserving "SHARED_ROUTE_DEPLOY_FAILED" "Shared route deployment failed: $err"
   fi
@@ -650,31 +1058,51 @@ cmd_deploy() {
   public_url=$(jq -r '.properties.outputs.url.value // ""' "$SCRATCH_DIR/deploy-route.json" 2>/dev/null)
   [ -n "$public_url" ] || public_url="$(current_public_url)"
 
-  # Stage 7: allow the shared public origin to reach Table Storage.
+  # Stage 8: allow the shared public origin to reach Table Storage.
   storage_name=$(jq -r '.properties.outputs.storageAccountName.value // ""' "$SCRATCH_DIR/deploy-app.json" 2>/dev/null)
+  if [ -z "$storage_name" ] || [ "$storage_name" = "None" ]; then
+    storage_name="$(shared_storage_name)"
+  fi
   if ! configure_shared_cors "$storage_name" "$public_url"; then
     err="$(mask_secrets < "$SCRATCH_DIR/cors.err")"
     fail_preserving "SHARED_CORS_FAILED" "Shared-origin CORS configuration failed: $err"
   fi
 
-  # Stage 8: verify the deployed control-plane graph.
+  # Stage 9: verify the deployed control-plane graph.
   if ! verify_control_plane; then
     findings="$(tr '\n' '; ' < "$SCRATCH_DIR/verify-findings.txt" | mask_secrets)"
     fail_preserving "SHARED_ROUTE_VERIFICATION_FAILED" "Shared route verification failed: $findings"
   fi
   log_success "Shared route verification passed"
 
-  # Stage 9: capture the resulting inventory as constant-resource evidence.
+  # Stage 10: after route verification succeeds, generate/apply the
+  # forwarding-gateway configuration. Bootstrap deployments report that the
+  # caller must rebuild/re-upload with the generated staticwebapp.config.json;
+  # steady-state deployments confirm direct-origin denial.
+  origin_host="$(shared_swa_hostname)"
+  forwarding_result="$(forwarding_gateway_state "$public_url" "$origin_host")"
+  forwarding_state="$(echo "$forwarding_result" | cut -d'|' -f1)"
+  direct_origin_access="$(echo "$forwarding_result" | cut -d'|' -f2)"
+  forwarding_code="$(echo "$forwarding_result" | cut -d'|' -f3)"
+  forwarding_message="$(echo "$forwarding_result" | cut -d'|' -f4-)"
+  diagnostics_json="$(diagnostic_array "$forwarding_code" "$forwarding_message")"
+  case "$forwarding_state" in
+    PublicRouteUnhealthy|ConfigUnavailable)
+      fail_preserving "$forwarding_code" "$forwarding_message"
+      ;;
+  esac
+
+  # Stage 11: capture the resulting inventory as constant-resource evidence.
   after_inventory="$(current_inventory)"
   echo "$after_inventory" > "$SCRATCH_DIR/inventory-after.json"
 
-  shared_obj="$(shared_service_object "$after_inventory" "$public_url" "Healthy")"
+  shared_obj="$(shared_service_object "$after_inventory" "$public_url" "Healthy" "$forwarding_state" "$STATICWEBAPP_CONFIG_FILE" "$direct_origin_access")"
 
   app_changes="$(cat "$SCRATCH_DIR/app-changes" 2>/dev/null || echo 0)"
   if [ "$app_changes" -eq 0 ] && compare_shared_inventory "$SCRATCH_DIR/inventory-before.json" "$SCRATCH_DIR/inventory-after.json" 2>/dev/null; then
-    emit_json_envelope "$DATA_KEY" "$ACTION" "NoChange" "$OP_ID" "$shared_obj"
+    emit_json_envelope "$DATA_KEY" "$ACTION" "NoChange" "$OP_ID" "$shared_obj" "$diagnostics_json"
   else
-    emit_json_envelope "$DATA_KEY" "$ACTION" "Succeeded" "$OP_ID" "$shared_obj"
+    emit_json_envelope "$DATA_KEY" "$ACTION" "Succeeded" "$OP_ID" "$shared_obj" "$diagnostics_json"
   fi
 }
 
@@ -684,11 +1112,34 @@ cmd_verify() {
 
   inventory="$(current_inventory)"
   public_url="$(current_public_url)"
+  storage_name="$(shared_storage_name)"
+
+  if ! configure_shared_cors "$storage_name" "$public_url"; then
+    err="$(mask_secrets < "$SCRATCH_DIR/cors.err")"
+    shared_obj="$(shared_service_object "$inventory" "$public_url" "Degraded")"
+    emit_json_envelope "$DATA_KEY" "$ACTION" "Failed" "$OP_ID" "$shared_obj" \
+      "$(diagnostic_array "SHARED_CORS_FAILED" "Shared-origin CORS configuration failed: $err")"
+    log_error "Shared-origin CORS configuration failed"
+    exit 1
+  fi
 
   if verify_control_plane; then
-    shared_obj="$(shared_service_object "$inventory" "$public_url" "Healthy")"
-    emit_json_envelope "$DATA_KEY" "$ACTION" "Succeeded" "$OP_ID" "$shared_obj"
-    return 0
+    origin_host="$(shared_swa_hostname)"
+    forwarding_result="$(forwarding_gateway_state "$public_url" "$origin_host")"
+    forwarding_state="$(echo "$forwarding_result" | cut -d'|' -f1)"
+    direct_origin_access="$(echo "$forwarding_result" | cut -d'|' -f2)"
+    forwarding_code="$(echo "$forwarding_result" | cut -d'|' -f3)"
+    forwarding_message="$(echo "$forwarding_result" | cut -d'|' -f4-)"
+    shared_obj="$(shared_service_object "$inventory" "$public_url" "Healthy" "$forwarding_state" "$STATICWEBAPP_CONFIG_FILE" "$direct_origin_access")"
+    if [ "$forwarding_state" = "Restricted" ]; then
+      emit_json_envelope "$DATA_KEY" "$ACTION" "Succeeded" "$OP_ID" "$shared_obj" \
+        "$(diagnostic_array "$forwarding_code" "$forwarding_message")"
+      return 0
+    fi
+    emit_json_envelope "$DATA_KEY" "$ACTION" "Failed" "$OP_ID" "$shared_obj" \
+      "$(diagnostic_array "$forwarding_code" "$forwarding_message")"
+    log_error "$forwarding_message"
+    exit 1
   fi
 
   findings="$(tr '\n' '; ' < "$SCRATCH_DIR/verify-findings.txt" | mask_secrets)"

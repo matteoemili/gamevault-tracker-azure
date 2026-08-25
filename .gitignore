@@ -37,3 +37,8 @@ pids
 # scripts/instance-route.sh register (see T037) - operational output, not
 # source.
 .forwarding-gateway/
+
+# Shared-service forwarding-gateway artifacts generated after route
+# verification. CI consumes these for the restricted Static Web Apps upload.
+/shared-forwarding-gateway.json
+/public/staticwebapp.config.json

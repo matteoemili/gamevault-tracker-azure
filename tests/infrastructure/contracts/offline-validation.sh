@@ -46,7 +46,19 @@ if require_cmd az; then
   do
     if [ -f "$template" ]; then
       if az bicep build --file "$template" --stdout >/dev/null 2>"$PROJECT_ROOT/.offline-validation-bicep.err"; then
-        log "  ok: $template"
+        # A successful exit code is not enough: Bicep reports invalid
+        # properties (BCP187) as warnings, and ARM then silently discards
+        # them, so tags and other metadata never land. Fail on any BCP
+        # diagnostic except the one pre-existing, documented BCP334 in
+        # infra/platform/main.bicep (benign: the analyzer cannot prove the
+        # length of a replace()/uniqueString() result).
+        unexpected_bcp=$(grep -o 'BCP[0-9]\{3\}' "$PROJECT_ROOT/.offline-validation-bicep.err" 2>/dev/null \
+          | grep -v '^BCP334$' | sort -u | tr '\n' ' ')
+        if [ -n "$unexpected_bcp" ]; then
+          fail "bicep build reported diagnostics for $template: ${unexpected_bcp}- $(grep 'BCP' "$PROJECT_ROOT/.offline-validation-bicep.err" | head -3)"
+        else
+          log "  ok: $template"
+        fi
       else
         fail "bicep build failed for $template: $(cat "$PROJECT_ROOT/.offline-validation-bicep.err")"
       fi
@@ -137,7 +149,8 @@ fi
 for cli_test in \
   "$PROJECT_ROOT/tests/infrastructure/contracts/platform-cli.sh" \
   "$PROJECT_ROOT/tests/infrastructure/contracts/instance-route-cli.sh" \
-  "$PROJECT_ROOT/tests/infrastructure/contracts/shared-service-cli.sh"
+  "$PROJECT_ROOT/tests/infrastructure/contracts/shared-service-cli.sh" \
+  "$PROJECT_ROOT/tests/infrastructure/contracts/logical-instance-cli.sh"
 do
   if [ -x "$cli_test" ]; then
     log "Running $(basename "$cli_test")..."
@@ -157,6 +170,7 @@ done
 for contract_test in \
   "$PROJECT_ROOT/tests/infrastructure/contracts/validate-infrastructure-workflow.sh" \
   "$PROJECT_ROOT/tests/infrastructure/contracts/front-door-registration-workflow.sh" \
+  "$PROJECT_ROOT/tests/infrastructure/contracts/shared-service-workflow.sh" \
   "$PROJECT_ROOT/tests/infrastructure/contracts/cors-add-origin.sh"
 do
   if [ -x "$contract_test" ]; then

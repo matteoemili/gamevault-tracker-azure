@@ -51,6 +51,24 @@ param originHostNameOverride string = ''
 @description('Whether the shared route is enabled')
 param routeEnabled bool = true
 
+@description('Hostname of the shared maintenance origin (from the platform deployment outputs). Required only when enableMaintenanceFallback is true')
+param maintenanceOriginHostName string = ''
+
+@description('Whether to add the shared maintenance origin as an optional, lower-priority fallback origin')
+param enableMaintenanceFallback bool = false
+
+@description('Name of the dedicated shared-only Front Door security policy that associates the WAF with managed endpoints')
+param wafSecurityPolicyName string = ''
+
+@description('Resource IDs of all managed Front Door endpoints protected by the shared WAF policy')
+param wafAssociatedEndpointIds array = []
+
+@description('Platform owner identity (person or team), applied as a tag')
+param platformOwner string = ''
+
+@description('Cost-center identifier, applied as a tag')
+param costCenter string = ''
+
 @description('Tags to apply to the shared Front Door child resources')
 param tags object = {}
 
@@ -64,6 +82,13 @@ resource sharedStaticWebApp 'Microsoft.Web/staticSites@2024-11-01' existing = {
 }
 
 var resolvedOriginHostName = empty(originHostNameOverride) ? sharedStaticWebApp.properties.defaultHostname : originHostNameOverride
+var wafPolicyName = replace(frontDoorProfileName, '-', '')
+var sharedRouteTags = union({
+  application: 'GameVault Tracker Platform'
+  environment: environment
+  managedBy: 'Bicep'
+  component: 'shared-entry'
+}, empty(platformOwner) ? {} : { owner: platformOwner }, empty(costCenter) ? {} : { costCenter: costCenter }, tags)
 
 // ----------------------------------------------------------------------------
 // Deploy the shared route against the existing shared Front Door profile
@@ -76,8 +101,13 @@ module route 'modules/shared-route.bicep' = {
     baseName: baseName
     frontDoorProfileName: frontDoorProfileName
     originHostName: resolvedOriginHostName
+    maintenanceOriginHostName: maintenanceOriginHostName
+    enableMaintenanceFallback: enableMaintenanceFallback
     routeEnabled: routeEnabled
-    tags: tags
+    wafPolicyId: resourceId('Microsoft.Network/frontdoorWebApplicationFirewallPolicies', wafPolicyName)
+    wafSecurityPolicyName: wafSecurityPolicyName
+    wafAssociatedEndpointIds: wafAssociatedEndpointIds
+    tags: sharedRouteTags
   }
 }
 
@@ -105,6 +135,9 @@ output originName string = route.outputs.originName
 
 @description('The shared route name')
 output routeName string = route.outputs.routeName
+
+@description('The shared authentication route name')
+output authRouteName string = route.outputs.authRouteName
 
 @description('The route provisioning state as reported by Azure')
 output routeProvisioningState string = route.outputs.routeProvisioningState

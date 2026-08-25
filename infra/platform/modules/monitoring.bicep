@@ -4,6 +4,15 @@ param location string
 @description('Name of the shared Front Door profile')
 param frontDoorProfileName string
 
+@description('Environment name (dev, staging, prod)')
+@allowed(['dev', 'staging', 'prod'])
+param environment string
+
+@description('Base name prefix used for deterministic shared endpoint naming')
+@minLength(1)
+@maxLength(11)
+param baseName string = 'gvt'
+
 @description('Tags applied to monitoring resources')
 param tags object = {}
 
@@ -19,6 +28,8 @@ param dailyQuotaGb int = 1
 
 var workspaceName = take(toLower('gvt-law-${uniqueString(resourceGroup().id)}'), 63)
 var actionGroupName = 'gvt-platform-alerts'
+var sharedEndpointName = toLower('${baseName}-${environment}-shared')
+var sharedOriginGroupName = 'og-shared'
 
 resource frontDoorProfile 'Microsoft.Cdn/profiles@2024-09-01' existing = {
   name: frontDoorProfileName
@@ -135,6 +146,62 @@ resource originHealthAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
   }
 }
 
+resource sharedOriginHealthAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = {
+  name: 'gvt-shared-origin-health-fast'
+  location: 'global'
+  tags: tags
+  properties: {
+    description: 'Shared Front Door origin health is below the required threshold for the shared endpoint/origin group.'
+    severity: 2
+    enabled: true
+    scopes: [
+      frontDoorProfile.id
+    ]
+    evaluationFrequency: 'PT1M'
+    windowSize: 'PT5M'
+    // targetResourceType/targetResourceRegion are only mandatory when the scope
+    // is a subscription, a resource group, or more than one resource. Supplying
+    // them for a single-resource scope pushes Azure Monitor down the
+    // resolve-metric-definitions-by-type-and-region path, which does not resolve
+    // reliably for a global Front Door profile.
+    criteria: {
+      'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
+      allOf: [
+        {
+          name: 'SharedOriginHealthPercentage'
+          metricNamespace: 'Microsoft.Cdn/profiles'
+          metricName: 'OriginHealthPercentage'
+          operator: 'LessThan'
+          threshold: 50
+          timeAggregation: 'Average'
+          criterionType: 'StaticThresholdCriterion'
+          dimensions: [
+            {
+              name: 'OriginGroup'
+              operator: 'Include'
+              values: [
+                sharedOriginGroupName
+              ]
+            }
+            {
+              name: 'Endpoint'
+              operator: 'Include'
+              values: [
+                sharedEndpointName
+              ]
+            }
+          ]
+        }
+      ]
+    }
+    actions: [
+      {
+        actionGroupId: actionGroup.id
+      }
+    ]
+  }
+}
+
 resource deploymentFailureAlert 'Microsoft.Insights/activityLogAlerts@2023-01-01-preview' = {
   name: 'gvt-platform-deployment-failure'
   location: 'global'
@@ -208,6 +275,7 @@ resource certificateFailureAlert 'Microsoft.Insights/activityLogAlerts@2023-01-0
 output workspaceId string = workspace.id
 output workspaceName string = workspace.name
 output actionGroupId string = actionGroup.id
+output monitoredSharedEndpointName string = sharedEndpointName
 output originHealthAlertId string = originHealthAlert.id
 output deploymentFailureAlertId string = deploymentFailureAlert.id
 output certificateFailureAlertId string = certificateFailureAlert.id

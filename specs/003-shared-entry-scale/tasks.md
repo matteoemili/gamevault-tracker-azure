@@ -101,19 +101,19 @@ This repository is a React static web application with Bicep infrastructure, Bas
 
 ### Tests for User Story 2
 
-- [ ] T024 [P] [US2] Create `tests/infrastructure/contracts/logical-instance-cli.sh` asserting the `create|show|list|retire` action surface, identifier normalization and 3-32 character validation, `--confirm` gating on `retire`, schema validation against `logical-instance-output.schema.json`, and the Constant-Resource Invariant that rejects any reference to `az deployment`, `az group create`, `az staticwebapp create`, `az afd endpoint`, or `instance-route.sh register`
-- [ ] T025 [P] [US2] Create `tests/infrastructure/fixtures/generate-logical-instances.sh` emitting a deterministic JSON Lines stream of N unique logical instance reservations for use as scale-test input
-- [ ] T026 [P] [US2] Create `tests/infrastructure/integration/constant-resource-scale.sh`, gated on `RUN_AZURE_INTEGRATION=1`, that applies 10,000 generated reservations in batches and asserts byte-identical before and after shared inventory documents (SC-001), plus duplicate and case-variant conflict handling (SC-009)
+- [x] T024 [P] [US2] Create `tests/infrastructure/contracts/logical-instance-cli.sh` asserting the `create|show|list|retire` action surface, identifier normalization and 3-32 character validation, `--confirm` gating on `retire`, schema validation against `logical-instance-output.schema.json`, and the Constant-Resource Invariant that rejects any reference to `az deployment`, `az group create`, `az staticwebapp create`, `az afd endpoint`, or `instance-route.sh register`
+- [x] T025 [P] [US2] Create `tests/infrastructure/fixtures/generate-logical-instances.sh` emitting a deterministic JSON Lines stream of N unique logical instance reservations for use as scale-test input
+- [x] T026 [P] [US2] Create `tests/infrastructure/integration/constant-resource-scale.sh`, gated on `RUN_AZURE_INTEGRATION=1`, that applies 10,000 generated reservations in batches and asserts byte-identical before and after shared inventory documents (SC-001), plus duplicate and case-variant conflict handling (SC-009)
 
 ### Implementation for User Story 2
 
-- [ ] T027 [US2] Add the `logicalinstances` table to `infra/shared/main.bicep` and expose a `logicalInstancesTableName` output defaulting to `logicalinstances`
-- [ ] T028 [US2] Implement argument parsing, identity-based Table data-plane authentication, and the `create` action in `scripts/logical-instance.sh`, writing one `Reserved` record with `PartitionKey='instance'`, the normalized identifier as `RowKey`, an immutable `dataNamespace`, `createdAt`, `createdBy`, and `metadataVersion=1`
-- [ ] T029 [US2] Implement conditional-insert conflict handling in the `create` action of `scripts/logical-instance.sh` so a `409 Conflict` re-reads the entity and returns `NoChange` for an equivalent request, `INSTANCE_CONFLICT` for incompatible immutable values, and `INSTANCE_RETIRED` for a retired identifier, never writing partial state before conflict detection
-- [ ] T030 [P] [US2] Implement the `show` action in `scripts/logical-instance.sh` returning one record by normalized identifier and failing with `INSTANCE_NOT_FOUND` when absent
-- [ ] T031 [US2] Implement the `list` action in `scripts/logical-instance.sh` with optional `--state` filtering, identifier-sorted output, and full continuation-token pagination so 10,000 records are never silently truncated
-- [ ] T032 [US2] Implement the guarded `retire` action in `scripts/logical-instance.sh` performing a soft transition to `Retired`, setting `retiredAt`, keeping the namespace reserved, returning `NoChange` when repeated, and deleting no infrastructure or application data
-- [ ] T033 [US2] Add the read-only `inventory` action to `scripts/shared-service.sh` reporting shared resource counts alongside the current logical instance count as the FR-018 constant-resource evidence
+- [x] T027 [US2] Add the `logicalinstances` table to `infra/shared/main.bicep` and expose a `logicalInstancesTableName` output defaulting to `logicalinstances`
+- [x] T028 [US2] Implement argument parsing, identity-based Table data-plane authentication, and the `create` action in `scripts/logical-instance.sh`, writing one `Reserved` record with `PartitionKey='instance'`, the normalized identifier as `RowKey`, an immutable `dataNamespace`, `createdAt`, `createdBy`, and `metadataVersion=1`
+- [x] T029 [US2] Implement conditional-insert conflict handling in the `create` action of `scripts/logical-instance.sh` so a `409 Conflict` re-reads the entity and returns `NoChange` for an equivalent request, `INSTANCE_CONFLICT` for incompatible immutable values, and `INSTANCE_RETIRED` for a retired identifier, never writing partial state before conflict detection
+- [x] T030 [P] [US2] Implement the `show` action in `scripts/logical-instance.sh` returning one record by normalized identifier and failing with `INSTANCE_NOT_FOUND` when absent
+- [x] T031 [US2] Implement the `list` action in `scripts/logical-instance.sh` with optional `--state` filtering, identifier-sorted output, and full continuation-token pagination so 10,000 records are never silently truncated
+- [x] T032 [US2] Implement the guarded `retire` action in `scripts/logical-instance.sh` performing a soft transition to `Retired`, setting `retiredAt`, keeping the namespace reserved, returning `NoChange` when repeated, and deleting no infrastructure or application data
+- [x] T033 [US2] Add the read-only `inventory` action to `scripts/shared-service.sh` reporting shared resource counts alongside the current logical instance count as the FR-018 constant-resource evidence
 
 **Checkpoint**: Logical instances are pure data operations. US1 and US2 both work independently.
 
@@ -127,19 +127,19 @@ This repository is a React static web application with Bicep infrastructure, Bas
 
 ### Tests for User Story 3
 
-- [ ] T034 [P] [US3] Create `tests/infrastructure/integration/shared-auth-cache-bypass.sh`, gated on `RUN_AZURE_INTEGRATION=1`, asserting that no `/.auth/*` response is served from cache and that no redirect leaves the shared Front Door host (SC-006)
-- [ ] T035 [P] [US3] Create `tests/infrastructure/integration/shared-controlled-unavailability.sh`, gated on `RUN_AZURE_INTEGRATION=1`, asserting that an unhealthy shared origin returns the controlled maintenance response and never falls back to a legacy instance origin (FR-009)
+- [x] T034 [P] [US3] Create `tests/infrastructure/integration/shared-auth-cache-bypass.sh`, gated on `RUN_AZURE_INTEGRATION=1`, asserting that no `/.auth/*` response is served from cache and that no redirect leaves the shared Front Door host (SC-006)
+- [x] T035 [P] [US3] Create `tests/infrastructure/integration/shared-controlled-unavailability.sh`, gated on `RUN_AZURE_INTEGRATION=1`, asserting that an unhealthy shared origin returns the controlled maintenance response and never falls back to a legacy instance origin (FR-009)
 
 ### Implementation for User Story 3
 
-- [ ] T036 [US3] Add the shared maintenance fallback origin at priority 2 to the origin group in `infra/platform/modules/shared-route.bicep`, reusing the existing maintenance origin hostname output from `infra/platform/main.bicep`
-- [ ] T037 [US3] Add a dedicated `/.auth/*` route to `infra/platform/modules/shared-route.bicep` with caching and compression left unconfigured, `httpsRedirect` enabled, and the origin host header preserved as the Static Web Apps hostname
-- [ ] T038 [US3] Add the shared endpoint to the existing shared Front Door security policy association in `infra/platform/modules/shared-route.bicep`, accepting the associated endpoint ID collection as a parameter exactly as `instance-route.bicep` does
-- [ ] T039 [US3] Wire the shared endpoint into the diagnostic settings, origin health metric alert, and action group in `infra/platform/modules/monitoring.bicep` so a sustained shared failure alerts within five minutes (SC-007)
-- [ ] T040 [US3] Apply the platform ownership, environment, cost centre, and `component` tags to every resource in `infra/shared/main.bicep` and `infra/platform/modules/shared-route.bicep` so the existing budget filter in `infra/platform/modules/cost-management.bicep` captures shared spend
-- [ ] T041 [US3] Extend the `verify` action in `scripts/shared-service.sh` to assert HTTPS redirect, WAF association coverage of the shared endpoint, `/.auth/*` cache-bypass rule presence, correct origin host and host header, and that no legacy endpoint or origin is attached to the shared route
-- [ ] T042 [US3] Add shared-origin CORS alignment for the shared public URL to `scripts/shared-service.sh`, reusing the idempotent duplicate-origin detection already proven in `scripts/cors-add-origin.sh`
-- [ ] T043 [US3] Add the operator-facing shared service section to `docs/INFRASTRUCTURE.md` covering the shared address, health, alerts, diagnostics, and where to find constant-resource inventory evidence (SC-010)
+- [x] T036 [US3] Add the shared maintenance fallback origin at priority 2 to the origin group in `infra/platform/modules/shared-route.bicep`, reusing the existing maintenance origin hostname output from `infra/platform/main.bicep`
+- [x] T037 [US3] Add a dedicated `/.auth/*` route to `infra/platform/modules/shared-route.bicep` with caching and compression left unconfigured, `httpsRedirect` enabled, and the origin host header preserved as the Static Web Apps hostname
+- [x] T038 [US3] Add the shared endpoint to the existing shared Front Door security policy association in `infra/platform/modules/shared-route.bicep`, accepting the associated endpoint ID collection as a parameter exactly as `instance-route.bicep` does
+- [x] T039 [US3] Wire the shared endpoint into the diagnostic settings, origin health metric alert, and action group in `infra/platform/modules/monitoring.bicep` so a sustained shared failure alerts within five minutes (SC-007)
+- [x] T040 [US3] Apply the platform ownership, environment, cost centre, and `component` tags to every resource in `infra/shared/main.bicep` and `infra/platform/modules/shared-route.bicep` so the existing budget filter in `infra/platform/modules/cost-management.bicep` captures shared spend
+- [x] T041 [US3] Extend the `verify` action in `scripts/shared-service.sh` to assert HTTPS redirect, WAF association coverage of the shared endpoint, `/.auth/*` cache-bypass rule presence, correct origin host and host header, and that no legacy endpoint or origin is attached to the shared route
+- [x] T042 [US3] Add shared-origin CORS alignment for the shared public URL to `scripts/shared-service.sh`, reusing the idempotent duplicate-origin detection already proven in `scripts/cors-add-origin.sh`
+- [x] T043 [US3] Add the operator-facing shared service section to `docs/INFRASTRUCTURE.md` covering the shared address, health, alerts, diagnostics, and where to find constant-resource inventory evidence (SC-010)
 
 **Checkpoint**: All protection and operational controls are preserved on the shared entry point.
 
@@ -153,21 +153,21 @@ This repository is a React static web application with Bicep infrastructure, Bas
 
 ### Tests for User Story 4
 
-- [ ] T044 [P] [US4] Create `tests/infrastructure/contracts/shared-service-workflow.sh` statically asserting the trigger behaviour, ordering, environment-scoped concurrency with `cancel-in-progress: false`, `if: always()` artifact retention, and every Forbidden New-Path Behavior listed in [contracts/shared-service-workflow.md](contracts/shared-service-workflow.md)
-- [ ] T045 [P] [US4] Create `tests/infrastructure/integration/legacy-coexistence.sh`, gated on `RUN_AZURE_INTEGRATION=1`, that snapshots two legacy instance routes and origins, deploys and rolls back the shared service, and asserts zero legacy resource or public response changes (SC-008)
+- [x] T044 [P] [US4] Create `tests/infrastructure/contracts/shared-service-workflow.sh` statically asserting the trigger behaviour, ordering, environment-scoped concurrency with `cancel-in-progress: false`, `if: always()` artifact retention, and every Forbidden New-Path Behavior listed in [contracts/shared-service-workflow.md](contracts/shared-service-workflow.md)
+- [x] T045 [P] [US4] Create `tests/infrastructure/integration/legacy-coexistence.sh`, gated on `RUN_AZURE_INTEGRATION=1`, that snapshots two legacy instance routes and origins, deploys and rolls back the shared service, and asserts zero legacy resource or public response changes (SC-008)
 
 ### Implementation for User Story 4
 
-- [ ] T046 [P] [US4] Create `scripts/pipeline/shared-service/initialize-shared-result.sh` writing an initial `shared-publication-result.json` with `stage=Preflight` and `status=Pending` before any Azure mutation
-- [ ] T047 [P] [US4] Create `scripts/pipeline/shared-service/resolve-shared-configuration.sh` mapping the selected environment to its shared resource group, platform resource group, and Front Door profile with no instance identifier input
-- [ ] T048 [US4] Create `scripts/pipeline/shared-service/deploy-shared-service.sh` invoking `scripts/shared-service.sh deploy` and retaining `shared-validation.json`, `shared-what-if.json`, `shared-deployment.json`, `shared-inventory-before.json`, and `shared-inventory-after.json`
-- [ ] T049 [US4] Create `scripts/pipeline/shared-service/verify-shared-service.sh` invoking `scripts/shared-service.sh verify`, retaining `shared-route-verification.json`, and failing the job unless the status is `Succeeded`
-- [ ] T050 [US4] Create `scripts/pipeline/shared-service/report-shared-service.sh` publishing the stable public URL to the job output and workflow summary and finalizing `shared-publication-result.json`
-- [ ] T051 [US4] Refactor the push and manual-dispatch path in `.github/workflows/ci-cd.yml` to the shared ordering in [contracts/shared-service-workflow.md](contracts/shared-service-workflow.md), removing instance identifier derivation, `infra/main.bicep` invocation, and `instance-route.sh` invocation from the persistent path
-- [ ] T052 [US4] Change the pull-request path in `.github/workflows/ci-cd.yml` to run build and offline contracts only, creating no resource group, Static Web App, storage account, Front Door endpoint, or route, and remove the per-PR resource deletion job
-- [ ] T053 [US4] Set an environment-scoped concurrency group with `cancel-in-progress: false` on the shared deployment job in `.github/workflows/ci-cd.yml` and upload the `shared-service-<environment>-<run-id>` artifact under `if: always()`
-- [ ] T054 [P] [US4] Add a superseded notice to the header comments of `scripts/instance-route.sh` and `infra/main.bicep` stating they are explicit legacy-only paths for existing instances, are not reachable from the shared persistent path, and are retired only by a separate approved feature
-- [ ] T055 [US4] Document the coexistence, rollback, and later-retirement guidance for legacy instances in `docs/MIGRATION.md`, explicitly stating that shared rollback never runs legacy unregister or cleanup commands
+- [x] T046 [P] [US4] Create `scripts/pipeline/shared-service/initialize-shared-result.sh` writing an initial `shared-publication-result.json` with `stage=Preflight` and `status=Pending` before any Azure mutation
+- [x] T047 [P] [US4] Create `scripts/pipeline/shared-service/resolve-shared-configuration.sh` mapping the selected environment to its shared resource group, platform resource group, and Front Door profile with no instance identifier input
+- [x] T048 [US4] Create `scripts/pipeline/shared-service/deploy-shared-service.sh` invoking `scripts/shared-service.sh deploy` and retaining `shared-validation.json`, `shared-what-if.json`, `shared-deployment.json`, `shared-inventory-before.json`, and `shared-inventory-after.json`
+- [x] T049 [US4] Create `scripts/pipeline/shared-service/verify-shared-service.sh` invoking `scripts/shared-service.sh verify`, retaining `shared-route-verification.json`, and failing the job unless the status is `Succeeded`
+- [x] T050 [US4] Create `scripts/pipeline/shared-service/report-shared-service.sh` publishing the stable public URL to the job output and workflow summary and finalizing `shared-publication-result.json`
+- [x] T051 [US4] Refactor the push and manual-dispatch path in `.github/workflows/ci-cd.yml` to the shared ordering in [contracts/shared-service-workflow.md](contracts/shared-service-workflow.md), removing instance identifier derivation, `infra/main.bicep` invocation, and `instance-route.sh` invocation from the persistent path
+- [x] T052 [US4] Change the pull-request path in `.github/workflows/ci-cd.yml` to run build and offline contracts only, creating no resource group, Static Web App, storage account, Front Door endpoint, or route, and remove the per-PR resource deletion job
+- [x] T053 [US4] Set an environment-scoped concurrency group with `cancel-in-progress: false` on the shared deployment job in `.github/workflows/ci-cd.yml` and upload the `shared-service-<environment>-<run-id>` artifact under `if: always()`
+- [x] T054 [P] [US4] Add a superseded notice to the header comments of `scripts/instance-route.sh` and `infra/main.bicep` stating they are explicit legacy-only paths for existing instances, are not reachable from the shared persistent path, and are retired only by a separate approved feature
+- [x] T055 [US4] Document the coexistence, rollback, and later-retirement guidance for legacy instances in `docs/MIGRATION.md`, explicitly stating that shared rollback never runs legacy unregister or cleanup commands
 
 **Checkpoint**: All four user stories are independently functional and legacy instances are provably unchanged.
 
@@ -175,11 +175,13 @@ This repository is a React static web application with Bicep infrastructure, Bas
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
-- [ ] T056 Apply forwarding-gateway origin restrictions in `scripts/shared-service.sh` only after route verification succeeds, so direct-origin access is denied while the shared public URL stays healthy
-- [ ] T057 [P] Update `README.md` and `MULTI_INSTANCE_QUICK_REF.md` to describe the shared service model, the single public address per environment, and logical instance management
-- [ ] T058 [P] Run `npm run infra:platform:shellcheck` extended to cover `scripts/shared-service.sh` and `scripts/logical-instance.sh`, and resolve every reported issue
-- [ ] T059 Run `bash tests/infrastructure/run-all.sh` and confirm the full offline suite passes with no Azure credentials present
+- [x] T056 Apply forwarding-gateway origin restrictions in `scripts/shared-service.sh` only after route verification succeeds, so direct-origin access is denied while the shared public URL stays healthy
+- [x] T057 [P] Update `README.md` and `MULTI_INSTANCE_QUICK_REF.md` to describe the shared service model, the single public address per environment, and logical instance management
+- [x] T058 [P] Run `npm run infra:platform:shellcheck` extended to cover `scripts/shared-service.sh` and `scripts/logical-instance.sh`, and resolve every reported issue
+- [x] T059 Run `bash tests/infrastructure/run-all.sh` and confirm the full offline suite passes with no Azure credentials present
 - [ ] T060 Execute the full [quickstart.md](quickstart.md) validation sequence against a disposable development environment and record the results
+
+> **T060 status**: BLOCKED — requires a live Azure subscription and credentials, which are not available in this environment. Everything it depends on is in place and offline-verified: the full offline suite passes with no credentials, all Bicep templates build with zero unexpected diagnostics, and the live scenarios are written and wired behind `RUN_AZURE_INTEGRATION=1` (`shared-route-idempotency.sh`, `constant-resource-scale.sh`, `legacy-coexistence.sh`, `shared-auth-cache-bypass.sh`, `shared-controlled-unavailability.sh`). Run them against a disposable dev environment to close this task.
 
 ---
 

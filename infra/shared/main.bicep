@@ -53,10 +53,16 @@ param repositoryBranch string = 'main'
 
 @description('Tags to apply to all shared resources')
 param tags object = {
-  application: 'GameVault Tracker'
+  application: 'GameVault Tracker Platform'
   environment: environment
   managedBy: 'Bicep'
 }
+
+@description('Platform owner identity (person or team), applied as a tag')
+param platformOwner string = ''
+
+@description('Cost-center identifier, applied as a tag')
+param costCenter string = ''
 
 // ----------------------------------------------------------------------------
 // Variables
@@ -69,6 +75,7 @@ var staticWebAppName = 'swa-${baseName}-shared-${environment}'
 
 var gamesTableName = 'games'
 var categoriesTableName = 'categories'
+var logicalInstancesTableName = 'logicalinstances'
 
 var defaultCorsOrigins = [
   'http://localhost:5173'
@@ -80,10 +87,18 @@ var defaultCorsOrigins = [
 var effectiveCorsOrigins = empty(corsAllowedOrigins) ? defaultCorsOrigins : union(defaultCorsOrigins, corsAllowedOrigins)
 
 // The shared service is identified by scope rather than by instance id.
-var effectiveTags = union(tags, {
-  component: 'shared-service'
-  scalingModel: 'shared-entry'
-})
+var effectiveTags = union(
+  tags,
+  {
+    application: 'GameVault Tracker Platform'
+    environment: environment
+    managedBy: 'Bicep'
+    component: 'shared-service'
+    scalingModel: 'shared-entry'
+  },
+  empty(platformOwner) ? {} : { owner: platformOwner },
+  empty(costCenter) ? {} : { costCenter: costCenter }
+)
 
 // ----------------------------------------------------------------------------
 // Resources
@@ -151,6 +166,11 @@ resource categoriesTable 'Microsoft.Storage/storageAccounts/tableServices/tables
   name: categoriesTableName
 }
 
+resource logicalInstancesTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2025-01-01' = {
+  parent: tableService
+  name: logicalInstancesTableName
+}
+
 resource staticWebApp 'Microsoft.Web/staticSites@2024-11-01' = {
   name: staticWebAppName
   location: location
@@ -202,6 +222,9 @@ output gamesTableName string = gamesTable.name
 
 @description('The name of the shared categories table')
 output categoriesTableName string = categoriesTable.name
+
+@description('The name of the shared logical instances table')
+output logicalInstancesTableName string = logicalInstancesTable.name
 
 @description('Resource Group name holding the shared service')
 output resourceGroupName string = resourceGroup().name

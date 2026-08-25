@@ -2,22 +2,43 @@
 
 A modern web application for tracking your video game collection, built with React, TypeScript, and Azure Table Storage.
 
-## 🎯 Multi-Instance Deployment Support
+## 🎯 Shared Service Deployment Model
 
-**NEW**: This application now supports multiple isolated instances! Each deployment can have its own:
-- ✅ Dedicated Azure resource group
-- ✅ Unique instance identifier
-- ✅ Independent data storage
-- ✅ Ability to redeploy to existing instances
+**Current shared path**: New environments use one shared GameVault application
+deployment behind one protected Azure Front Door public address per environment
+(`dev`, `staging`, `prod`). Logical instances are Azure Table Storage records
+reserved by `scripts/logical-instance.sh`; creating one does **not** create a
+resource group, Static Web App, storage account, or Front Door endpoint.
 
-Perfect for:
-- Multiple environments (dev, staging, production)
-- Team member isolation
-- Feature testing
-- Customer demos
-- A/B testing
+Shared service lifecycle:
 
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed multi-instance deployment instructions.
+```bash
+./scripts/shared-service.sh <validate|what-if|deploy|verify|status|inventory> [options]
+```
+
+Core options are `--environment`, `--subscription-id`,
+`--shared-resource-group`, `--platform-resource-group`,
+`--front-door-profile`, `--location`, `--base-name`, `--local-only`,
+`--confirm`, and `--non-interactive`. Use `--local-only` only with
+`validate`; use `--confirm` for `deploy`.
+
+Logical instance lifecycle:
+
+```bash
+./scripts/logical-instance.sh <create|list|show|retire> [options]
+```
+
+The current CLI usage block lists `--environment`, `--subscription-id`,
+`--storage-account-name`, `--table-name`, `--logical-instance-id`,
+`--display-name`, `--state`, `--confirm`, and `--non-interactive`. These
+commands manage shared Table Storage records only.
+
+### Legacy per-instance path
+
+The older multi-instance model, where each instance had its own resource group,
+storage account, Static Web App, and public route, is retained only for existing
+legacy instances and explicit operator-controlled maintenance. Do not use it for
+new logical instances. See [DEPLOYMENT.md](./DEPLOYMENT.md) for legacy details.
 
 ## Features
 
@@ -141,50 +162,52 @@ src/
 
 ## Deployment
 
-### Quick Deploy (New Instance)
+### Shared Deployment
 
-Push to main branch to automatically create a new instance:
+Validate locally without Azure mutation:
 
 ```bash
-git add .
-git commit -m "Deploy new instance"
-git push origin main
+./scripts/shared-service.sh validate --environment dev --local-only
 ```
 
-The workflow will automatically:
-1. Generate a unique instance ID
-2. Create a dedicated resource group
-3. Deploy all Azure resources
-4. Build and deploy your application
+Deploy one shared service for an environment:
 
-### Redeploy to Existing Instance
+```bash
+./scripts/shared-service.sh deploy \
+  --environment dev \
+  --subscription-id "$AZURE_SUBSCRIPTION_ID" \
+  --shared-resource-group rg-gamevault-shared-dev \
+  --platform-resource-group rg-gamevault-platform-dev \
+  --front-door-profile gvt-afd-dev \
+  --location westeurope \
+  --confirm
+```
 
-Via GitHub Actions UI:
-1. Go to **Actions** tab
-2. Select **Azure Static Web Apps CI/CD**
-3. Click **Run workflow**
-4. Enter your instance ID (e.g., `abc12345`)
-5. Select environment (prod/dev/staging)
-6. Click **Run workflow**
+Inspect the single public address and health:
 
-### Multi-Instance Management
+```bash
+./scripts/shared-service.sh status \
+  --environment dev \
+  --subscription-id "$AZURE_SUBSCRIPTION_ID" \
+  --shared-resource-group rg-gamevault-shared-dev \
+  --platform-resource-group rg-gamevault-platform-dev \
+  --front-door-profile gvt-afd-dev | jq .
+```
 
-**View all instances**:
+Add or inspect logical instances with `scripts/logical-instance.sh`; those
+actions are data-plane operations and do not change shared infrastructure.
+
+### Legacy Per-Instance Management
+
+Existing legacy instances may still be inspected with Azure CLI queries such as:
+
 ```bash
 az group list --query "[?starts_with(name, 'rg-gamevault-')]" --output table
 ```
 
-**Delete an instance**:
-```bash
-az group delete --name "rg-gamevault-{instanceId}" --yes
-```
-
-**Find your instance ID**:
-- Check deployment logs in GitHub Actions
-- Look at resource group tags in Azure Portal
-- Use: `az group show --name rg-gamevault-{id} --query tags.instanceId`
-
-For complete deployment documentation, see [DEPLOYMENT.md](./DEPLOYMENT.md).
+Delete or reroute legacy resources only as part of an explicit migration or
+cleanup activity. Shared-service rollback never runs legacy unregister or
+cleanup commands.
 
 ### Azure Static Web Apps
 

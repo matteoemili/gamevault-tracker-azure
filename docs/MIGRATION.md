@@ -257,6 +257,39 @@ If issues occur, you can rollback by:
 2. Data is preserved in export files
 3. Re-import data into GitHub Spark version
 
+## Shared Service and Legacy Coexistence
+
+Feature `003-shared-entry-scale` introduces one shared GameVault service and one
+shared Front Door public URL per environment. This is additive: existing
+per-instance resource groups, Static Web Apps, storage accounts, Front Door
+endpoints, routes, and origins remain unchanged and continue to serve their
+current addresses.
+
+The shared deployment path does not derive an instance identifier, does not call
+the legacy `infra/main.bicep` template, and does not run `scripts/instance-route.sh`.
+Those legacy files remain available only for explicit operations against already
+approved legacy instances.
+
+### Shared Rollback Guidance
+
+Rollback the shared service by redeploying a previously verified shared
+application and shared-route configuration through `scripts/shared-service.sh`
+or the shared GitHub Actions deployment path. Keep the shared route in place
+until the prior application version is verified through the shared public URL.
+
+Shared rollback never runs legacy unregister or cleanup commands. Do not run
+`scripts/instance-route.sh unregister`, pull-request resource cleanup, or any
+legacy resource-group deletion as part of shared rollback. Legacy instances are
+outside the shared rollback boundary and must remain untouched.
+
+### Later Retirement Guidance
+
+Retiring legacy instances requires a separate approved feature that defines data
+migration, user communication, rollback, and deletion safeguards. Until that
+feature is approved and validated, legacy templates and scripts are explicit
+legacy-only paths and must not be removed, redirected, or silently invoked by the
+shared persistent deployment workflow.
+
 ## Future Enhancements
 
 ### Possible Additions

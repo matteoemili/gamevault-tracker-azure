@@ -2,6 +2,10 @@
 # ============================================================================
 # instance-route.sh - Instance Route lifecycle CLI
 # ============================================================================
+# SUPERSEDED NOTICE: This is an explicit legacy-only path for existing
+# per-instance deployments. It is not reachable from the shared persistent
+# deployment path and may be retired only by a separate approved feature.
+#
 # Usage:
 #   ./scripts/instance-route.sh <register|verify|status|unregister> [options]
 #

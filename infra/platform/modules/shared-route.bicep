@@ -36,8 +36,23 @@ param frontDoorProfileName string
 @description('Hostname of the shared application origin (the shared Static Web App default hostname)')
 param originHostName string
 
+@description('Hostname of the shared maintenance origin. Required only when enableMaintenanceFallback is true')
+param maintenanceOriginHostName string = ''
+
+@description('Whether to add the shared maintenance origin as an optional, lower-priority fallback origin')
+param enableMaintenanceFallback bool = false
+
 @description('Whether the route is enabled. Kept as a parameter so the route can be provisioned but held disabled until verified.')
 param routeEnabled bool = true
+
+@description('Resource ID of the centrally managed Front Door WAF policy')
+param wafPolicyId string = ''
+
+@description('Name of the dedicated shared-only Front Door security policy that associates the WAF with managed endpoints')
+param wafSecurityPolicyName string = ''
+
+@description('Resource IDs of all managed Front Door endpoints protected by the shared WAF policy')
+param wafAssociatedEndpointIds array = []
 
 @description('Tags to apply to the shared Front Door child resources')
 param tags object = {}
@@ -52,9 +67,17 @@ param tags object = {}
 var endpointName = toLower('${baseName}-${environment}-shared')
 var originGroupName = 'og-shared'
 var originName = 'origin-shared'
+var maintenanceOriginName = 'origin-shared-maintenance'
 var routeName = 'route-shared'
+var authRouteName = 'route-shared-auth'
+var effectiveWafSecurityPolicyName = empty(wafSecurityPolicyName) ? 'waf-shared-${environment}' : wafSecurityPolicyName
 
-var sharedTags = union(tags, {
+var sharedTags = union({
+  application: 'GameVault Tracker Platform'
+  environment: environment
+  managedBy: 'Bicep'
+  component: 'shared-entry'
+}, tags, {
   component: 'shared-entry'
   scalingModel: 'shared-entry'
 })
@@ -119,6 +142,21 @@ resource origin 'Microsoft.Cdn/profiles/originGroups/origins@2024-09-01' = {
   }
 }
 
+resource maintenanceOrigin 'Microsoft.Cdn/profiles/originGroups/origins@2024-09-01' = if (enableMaintenanceFallback && !empty(maintenanceOriginHostName)) {
+  parent: originGroup
+  name: maintenanceOriginName
+  properties: {
+    hostName: maintenanceOriginHostName
+    httpPort: 80
+    httpsPort: 443
+    originHostHeader: maintenanceOriginHostName
+    priority: 2
+    weight: 1000
+    enabledState: 'Enabled'
+    enforceCertificateNameCheck: true
+  }
+}
+
 resource route 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-09-01' = {
   parent: endpoint
   name: routeName
@@ -140,6 +178,58 @@ resource route 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-09-01' = {
   }
   dependsOn: [
     origin
+  ]
+}
+
+resource authRoute 'Microsoft.Cdn/profiles/afdEndpoints/routes@2024-09-01' = {
+  parent: endpoint
+  name: authRouteName
+  properties: {
+    originGroup: {
+      id: originGroup.id
+    }
+    supportedProtocols: [
+      'Http'
+      'Https'
+    ]
+    patternsToMatch: [
+      '/.auth/*'
+    ]
+    forwardingProtocol: 'HttpsOnly'
+    linkToDefaultDomain: 'Enabled'
+    httpsRedirect: 'Enabled'
+    enabledState: routeEnabled ? 'Enabled' : 'Disabled'
+  }
+  dependsOn: [
+    origin
+  ]
+}
+
+resource wafAssociation 'Microsoft.Cdn/profiles/securityPolicies@2024-09-01' = if (!empty(wafPolicyId)) {
+  parent: frontDoorProfile
+  name: effectiveWafSecurityPolicyName
+  properties: {
+    parameters: {
+      type: 'WebApplicationFirewall'
+      wafPolicy: {
+        id: wafPolicyId
+      }
+      associations: [
+        {
+          domains: [
+            for endpointId in wafAssociatedEndpointIds: {
+              id: endpointId
+            }
+          ]
+          patternsToMatch: [
+            '/*'
+          ]
+        }
+      ]
+    }
+  }
+  dependsOn: [
+    endpoint
   ]
 }
 
@@ -167,6 +257,9 @@ output originName string = origin.name
 
 @description('The shared route name')
 output routeName string = route.name
+
+@description('The shared authentication route name')
+output authRouteName string = authRoute.name
 
 @description('The route provisioning state as reported by Azure')
 output routeProvisioningState string = route.properties.provisioningState

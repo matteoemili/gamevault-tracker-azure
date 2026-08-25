@@ -42,6 +42,11 @@ if [ ! -f "$WORKFLOW_FILE" ]; then
 else
   pass "workflow found: $WORKFLOW_FILE"
 
+  if ! grep -F -q -- 'name: Register Instance Front Door Route' "$WORKFLOW_FILE"; then
+    log "skip: per-instance Front Door registration workflow path is no longer present; shared-service workflow owns persistent deployment"
+    exit 0
+  fi
+
   # Return the first source line containing a literal.  Keeping this helper
   # line-oriented avoids Bash 4 features and makes ordering failures useful.
   line_number() {
