@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gamevault-tracker.local/schemas/shared-service-output.schema.json",
+  "title": "Shared Service Lifecycle CLI Output",
+  "description": "Non-secret result envelope emitted by scripts/shared-service.sh for validate, what-if, deploy, verify, status, and inventory. Exactly one such document is written to stdout per invocation (see specs/003-shared-entry-scale/contracts/shared-service-cli.md).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "action", "status", "operationId", "sharedService", "diagnostics"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "action": {
+      "type": "string",
+      "enum": ["validate", "what-if", "deploy", "verify", "status", "inventory"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["Succeeded", "NoChange", "Degraded", "Failed"]
+    },
+    "operationId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Format: shared-<environment>-<UTC timestamp>, e.g. shared-prod-20260825T160000Z"
+    },
+    "sharedService": {
+      "description": "Null only when no shared-service state could be determined, for example on a usage error or a local-only validation.",
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["environment", "resourceGroupName", "resourceCounts"],
+          "properties": {
+            "environment": { "type": "string", "enum": ["dev", "staging", "prod"] },
+            "resourceGroupName": { "type": "string", "minLength": 1 },
+            "staticWebAppId": { "type": "string" },
+            "storageAccountId": { "type": "string" },
+            "frontDoorProfileId": { "type": "string" },
+            "endpointId": { "type": "string" },
+            "publicUrl": {
+              "oneOf": [
+                { "type": "null" },
+                { "type": "string", "pattern": "^https://" }
+              ]
+            },
+            "originHostName": { "type": "string" },
+            "healthState": {
+              "type": "string",
+              "enum": ["Unknown", "Healthy", "Degraded", "Unavailable"]
+            },
+            "logicalInstanceCount": { "type": "integer", "minimum": 0 },
+            "resourceCounts": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["staticWebApps", "endpoints", "routes", "originGroups", "applicationOrigins"],
+              "description": "Constant-resource evidence. These counts must not change as logical instances are added (FR-018 / SC-001).",
+              "properties": {
+                "staticWebApps": { "type": "integer", "minimum": 0 },
+                "endpoints": { "type": "integer", "minimum": 0 },
+                "routes": { "type": "integer", "minimum": 0 },
+                "originGroups": { "type": "integer", "minimum": 0 },
+                "applicationOrigins": { "type": "integer", "minimum": 0 },
+                "storageAccounts": { "type": "integer", "minimum": 0 }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message"],
+        "properties": {
+          "code": { "type": "string", "minLength": 1 },
+          "message": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

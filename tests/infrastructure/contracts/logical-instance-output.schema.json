@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gamevault-tracker.local/schemas/logical-instance-output.schema.json",
+  "title": "Logical Instance CLI Output",
+  "description": "Non-secret result envelope emitted by scripts/logical-instance.sh for create, show, list, and retire. Exactly one such document is written to stdout per invocation (see specs/003-shared-entry-scale/contracts/logical-instance-cli.md). Storage credentials, SAS values, account keys, and authorization headers are forbidden anywhere in this document. The record shape is intentionally inlined rather than expressed with $ref, because the repository validator in tests/infrastructure/contracts/output-schema.sh implements only a documented JSON Schema subset and does not resolve references.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "action", "status", "operationId", "logicalInstance", "diagnostics"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "action": {
+      "type": "string",
+      "enum": ["create", "show", "list", "retire"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["Succeeded", "NoChange", "Failed"]
+    },
+    "operationId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Format: logical-instance-<id>-<UTC timestamp>, e.g. logical-instance-demo-user-20260825T160000Z"
+    },
+    "logicalInstance": {
+      "description": "One record for create/show/retire, an array of records for list, or null when no record state could be determined.",
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "displayName",
+            "dataNamespace",
+            "environment",
+            "state",
+            "createdAt",
+            "updatedAt",
+            "metadataVersion"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 32,
+              "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$",
+              "description": "Case-normalized logical-instance identifier"
+            },
+            "displayName": { "type": "string", "minLength": 1, "maxLength": 100 },
+            "dataNamespace": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 32,
+              "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$",
+              "description": "Immutable reserved namespace; reservation is not authorization"
+            },
+            "environment": { "type": "string", "enum": ["dev", "staging", "prod"] },
+            "state": { "type": "string", "enum": ["Reserved", "Retired"] },
+            "createdAt": { "type": "string", "minLength": 1 },
+            "createdBy": { "type": "string" },
+            "updatedAt": { "type": "string", "minLength": 1 },
+            "retiredAt": {
+              "oneOf": [
+                { "type": "null" },
+                { "type": "string", "minLength": 1 }
+              ]
+            },
+            "metadataVersion": { "type": "integer", "minimum": 1 }
+          }
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "displayName",
+              "dataNamespace",
+              "environment",
+              "state",
+              "createdAt",
+              "updatedAt",
+              "metadataVersion"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 32,
+                "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+              },
+              "displayName": { "type": "string", "minLength": 1, "maxLength": 100 },
+              "dataNamespace": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 32,
+                "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+              },
+              "environment": { "type": "string", "enum": ["dev", "staging", "prod"] },
+              "state": { "type": "string", "enum": ["Reserved", "Retired"] },
+              "createdAt": { "type": "string", "minLength": 1 },
+              "createdBy": { "type": "string" },
+              "updatedAt": { "type": "string", "minLength": 1 },
+              "retiredAt": {
+                "oneOf": [
+                  { "type": "null" },
+                  { "type": "string", "minLength": 1 }
+                ]
+              },
+              "metadataVersion": { "type": "integer", "minimum": 1 }
+            }
+          }
+        }
+      ]
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message"],
+        "properties": {
+          "code": { "type": "string", "minLength": 1 },
+          "message": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

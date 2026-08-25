@@ -40,7 +40,9 @@ if require_cmd az; then
   log "Building platform Bicep templates..."
   for template in \
     "$PROJECT_ROOT/infra/platform/main.bicep" \
-    "$PROJECT_ROOT/infra/platform/instance-route.bicep"
+    "$PROJECT_ROOT/infra/platform/instance-route.bicep" \
+    "$PROJECT_ROOT/infra/platform/shared-route.bicep" \
+    "$PROJECT_ROOT/infra/shared/main.bicep"
   do
     if [ -f "$template" ]; then
       if az bicep build --file "$template" --stdout >/dev/null 2>"$PROJECT_ROOT/.offline-validation-bicep.err"; then
@@ -111,12 +113,31 @@ else
   fail "output-schema.sh not found or not executable: $SCHEMA_SELF_TEST"
 fi
 
+# Every CLI output schema must exist and be parseable JSON, otherwise a
+# contract test could silently validate against nothing.
+if require_cmd jq; then
+  for schema_file in \
+    "$PROJECT_ROOT/tests/infrastructure/contracts/platform-output.schema.json" \
+    "$PROJECT_ROOT/tests/infrastructure/contracts/shared-service-output.schema.json" \
+    "$PROJECT_ROOT/tests/infrastructure/contracts/logical-instance-output.schema.json"
+  do
+    if [ ! -f "$schema_file" ]; then
+      fail "output schema not found: $schema_file"
+    elif jq -e 'type == "object" and has("properties")' "$schema_file" >/dev/null 2>&1; then
+      log "  ok: $(basename "$schema_file")"
+    else
+      fail "output schema is not a parseable JSON Schema object: $schema_file"
+    fi
+  done
+fi
+
 # ----------------------------------------------------------------------------
 # 5. Lifecycle CLI contract tests (offline only)
 # ----------------------------------------------------------------------------
 for cli_test in \
   "$PROJECT_ROOT/tests/infrastructure/contracts/platform-cli.sh" \
-  "$PROJECT_ROOT/tests/infrastructure/contracts/instance-route-cli.sh"
+  "$PROJECT_ROOT/tests/infrastructure/contracts/instance-route-cli.sh" \
+  "$PROJECT_ROOT/tests/infrastructure/contracts/shared-service-cli.sh"
 do
   if [ -x "$cli_test" ]; then
     log "Running $(basename "$cli_test")..."

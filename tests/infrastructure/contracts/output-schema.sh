@@ -35,7 +35,13 @@ require_cmd jq
 JQ_VALIDATE_PROGRAM='
 def validate(schema; doc):
   if (schema | has("oneOf")) then
-    (schema.oneOf | map(try (validate(.; doc) | true) catch false)) as $results
+    # Bind each branch to a variable before recursing. Passing the branch as
+    # a bare `.` would make the `schema` closure re-evaluate against whatever
+    # `.` happens to be at the point of use inside the callee - notably in
+    # `doc | test(schema.pattern)`, where `.` is the document - which made
+    # `pattern` inside any oneOf branch throw and be silently swallowed by
+    # the surrounding `try ... catch false`.
+    (schema.oneOf | map(. as $branch | try (validate($branch; doc) | true) catch false)) as $results
     | if ($results | any(.)) then true else error("value matched no oneOf branch") end
   elif (schema.type? == "null") then
     if doc == null then true else error("expected null, got " + (doc | tostring)) end

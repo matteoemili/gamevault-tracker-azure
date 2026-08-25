@@ -23,6 +23,7 @@ if [ "${RUN_AZURE_INTEGRATION:-}" = "1" ]; then
   run bash "$ROOT_DIR/tests/infrastructure/integration/authorization-audit.sh"
   run bash "$ROOT_DIR/tests/infrastructure/integration/orphan-detection.sh"
   run bash "$ROOT_DIR/tests/infrastructure/integration/deregistration-isolation.sh"
+  run bash "$ROOT_DIR/tests/infrastructure/integration/shared-route-idempotency.sh"
 else
   echo "[run-all] Azure integration checks skipped; set RUN_AZURE_INTEGRATION=1 with documented variables to run them." >&2
 fi

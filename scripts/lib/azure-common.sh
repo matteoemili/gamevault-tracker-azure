@@ -117,6 +117,184 @@ operation_id() {
   echo "${prefix}-${scope_id}-$(iso_now)"
 }
 
+# normalize_logical_instance_id <raw-id>: trims surrounding whitespace,
+# lowercases, validates, and echoes the normalized logical-instance
+# identifier. Normalization happens BEFORE validation and before any
+# conflict detection or persistent write, so that identifiers differing only
+# by case or padding can never become two distinct logical instances
+# (see specs/003-shared-entry-scale/contracts/logical-instance-cli.md).
+#
+# Rules: 3-32 characters matching ^[a-z0-9][a-z0-9-]*[a-z0-9]$
+#
+# Exit codes:
+#   0 - valid; normalized id on stdout
+#   3 - empty input
+#   4 - invalid length
+#   5 - invalid characters or invalid leading/trailing hyphen
+normalize_logical_instance_id() {
+  local raw="${1:-}"
+  local trimmed
+  local normalized
+  local length
+
+  # Trim leading and trailing whitespace without relying on Bash 4 features.
+  trimmed="$(printf '%s' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+  if [ -z "$trimmed" ]; then
+    return 3
+  fi
+
+  normalized="$(printf '%s' "$trimmed" | tr '[:upper:]' '[:lower:]')"
+
+  length=${#normalized}
+  if [ "$length" -lt 3 ] || [ "$length" -gt 32 ]; then
+    return 4
+  fi
+
+  # LC_ALL=C is exported above, so these bracket expressions are byte-wise.
+  case "$normalized" in
+    [a-z0-9]*[a-z0-9]) ;;
+    *) return 5 ;;
+  esac
+  case "$normalized" in
+    *[!a-z0-9-]*) return 5 ;;
+  esac
+
+  printf '%s\n' "$normalized"
+  return 0
+}
+
+# ----------------------------------------------------------------------------
+# Shared resource inventory (constant-resource evidence)
+# ----------------------------------------------------------------------------
+
+# capture_shared_inventory <subscription-id> <shared-rg> <platform-rg> <front-door-profile>
+# Emits a deterministic JSON document of shared resource counts and sorted
+# resource IDs. This is the evidence used to prove that adding logical
+# instances does not grow infrastructure (FR-018 / SC-001), so its output must
+# be stable across invocations: every ID list is sorted and no timestamp,
+# operation ID, or other volatile field is included.
+capture_shared_inventory() {
+  local subscription_id="$1"
+  local shared_rg="$2"
+  local platform_rg="$3"
+  local profile_name="$4"
+
+  require_cmd az
+  require_cmd jq
+
+  local static_web_apps
+  local storage_accounts
+  local endpoints
+  local origin_groups
+  local routes
+  local origins
+  local origin_group_name
+
+  static_web_apps=$(az staticwebapp list \
+    --resource-group "$shared_rg" \
+    --subscription "$subscription_id" \
+    --query "[].id" -o json 2>/dev/null || echo '[]')
+
+  storage_accounts=$(az storage account list \
+    --resource-group "$shared_rg" \
+    --subscription "$subscription_id" \
+    --query "[].id" -o json 2>/dev/null || echo '[]')
+
+  endpoints=$(az afd endpoint list \
+    --resource-group "$platform_rg" \
+    --profile-name "$profile_name" \
+    --subscription "$subscription_id" \
+    --query "[].id" -o json 2>/dev/null || echo '[]')
+
+  origin_groups=$(az afd origin-group list \
+    --resource-group "$platform_rg" \
+    --profile-name "$profile_name" \
+    --subscription "$subscription_id" \
+    --query "[].id" -o json 2>/dev/null || echo '[]')
+
+  routes='[]'
+  for endpoint_name in $(echo "$endpoints" | jq -r '.[] | split("/") | last'); do
+    endpoint_routes=$(az afd route list \
+      --resource-group "$platform_rg" \
+      --profile-name "$profile_name" \
+      --endpoint-name "$endpoint_name" \
+      --subscription "$subscription_id" \
+      --query "[].id" -o json 2>/dev/null || echo '[]')
+    routes=$(jq -n --argjson a "$routes" --argjson b "$endpoint_routes" '$a + $b')
+  done
+
+  origins='[]'
+  for origin_group_name in $(echo "$origin_groups" | jq -r '.[] | split("/") | last'); do
+    group_origins=$(az afd origin list \
+      --resource-group "$platform_rg" \
+      --profile-name "$profile_name" \
+      --origin-group-name "$origin_group_name" \
+      --subscription "$subscription_id" \
+      --query "[].id" -o json 2>/dev/null || echo '[]')
+    origins=$(jq -n --argjson a "$origins" --argjson b "$group_origins" '$a + $b')
+  done
+
+  jq -n \
+    --argjson staticWebApps "$static_web_apps" \
+    --argjson storageAccounts "$storage_accounts" \
+    --argjson endpoints "$endpoints" \
+    --argjson originGroups "$origin_groups" \
+    --argjson routes "$routes" \
+    --argjson origins "$origins" \
+    '{
+      staticWebApps: ($staticWebApps | sort),
+      storageAccounts: ($storageAccounts | sort),
+      endpoints: ($endpoints | sort),
+      originGroups: ($originGroups | sort),
+      routes: ($routes | sort),
+      origins: ($origins | sort),
+      counts: {
+        staticWebApps: ($staticWebApps | length),
+        storageAccounts: ($storageAccounts | length),
+        endpoints: ($endpoints | length),
+        originGroups: ($originGroups | length),
+        routes: ($routes | length),
+        origins: ($origins | length)
+      }
+    }'
+}
+
+# compare_shared_inventory <before-file> <after-file>
+# Returns 0 when the two inventory documents are exactly equal, 1 otherwise.
+# On difference, a human-readable summary is written to stderr. Equality is
+# strict: a single added endpoint, route, origin, or application is a failure,
+# because the whole point of the shared model is that these counts never move
+# when logical instances are added.
+compare_shared_inventory() {
+  local before_file="$1"
+  local after_file="$2"
+
+  require_cmd jq
+
+  if [ ! -f "$before_file" ]; then
+    log_error "inventory comparison failed: missing before snapshot: $before_file"
+    return 1
+  fi
+  if [ ! -f "$after_file" ]; then
+    log_error "inventory comparison failed: missing after snapshot: $after_file"
+    return 1
+  fi
+
+  if jq -e -n \
+    --slurpfile before "$before_file" \
+    --slurpfile after "$after_file" \
+    '$before[0] == $after[0]' >/dev/null 2>&1; then
+    return 0
+  fi
+
+  log_error "shared resource inventory changed; constant-resource invariant violated"
+  jq -n \
+    --slurpfile before "$before_file" \
+    --slurpfile after "$after_file" \
+    '{before: $before[0].counts, after: $after[0].counts}' >&2 2>/dev/null || true
+  return 1
+}
+
 # ----------------------------------------------------------------------------
 # JSON envelope helpers
 # ----------------------------------------------------------------------------

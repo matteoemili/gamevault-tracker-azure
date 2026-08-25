@@ -13,7 +13,10 @@
         "infra:platform:build": "az bicep build --file infra/platform/main.bicep --stdout > /dev/null",
         "infra:platform:validate": "./scripts/platform.sh validate --environment dev --local-only",
         "infra:platform:test": "bash tests/infrastructure/contracts/offline-validation.sh",
-        "infra:platform:shellcheck": "shellcheck scripts/*.sh scripts/lib/*.sh tests/infrastructure/**/*.sh"
+        "infra:platform:shellcheck": "shellcheck scripts/*.sh scripts/lib/*.sh tests/infrastructure/**/*.sh",
+        "infra:shared:build": "az bicep build --file infra/shared/main.bicep --stdout > /dev/null",
+        "infra:shared:validate": "./scripts/shared-service.sh validate --environment dev --local-only",
+        "infra:shared:test": "bash tests/infrastructure/contracts/shared-service-cli.sh"
     },
     "dependencies": {
         "@github/spark": "^0.39.0",
