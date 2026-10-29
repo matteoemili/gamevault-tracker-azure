@@ -8,7 +8,7 @@
 #   3. ShellCheck (if installed) as a soft, non-fatal warning pass.
 #   4. The output-schema.sh self-test suite.
 #   5. Platform and instance-route CLI contract tests.
-#   6. Workflow and CORS contract tests.
+#   6. Workflow and CORS contract tests (Front Door and direct pipelines).
 #
 # See specs/001-multi-instance-platform/quickstart.md "Stage 1".
 # Bash 3.2 compatible.
@@ -136,6 +136,7 @@ done
 for contract_test in \
   "$PROJECT_ROOT/tests/infrastructure/contracts/validate-infrastructure-workflow.sh" \
   "$PROJECT_ROOT/tests/infrastructure/contracts/front-door-registration-workflow.sh" \
+  "$PROJECT_ROOT/tests/infrastructure/contracts/direct-deployment-workflow.sh" \
   "$PROJECT_ROOT/tests/infrastructure/contracts/cors-add-origin.sh"
 do
   if [ -x "$contract_test" ]; then

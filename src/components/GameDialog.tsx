@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,20 +35,36 @@ export function GameDialog({ open, onOpenChange, onSave, game, categories, initi
     }
   );
 
+  // Reset the whole form only when the dialog opens or switches to a different
+  // record, so a draft is never discarded by unrelated re-renders.
+  const draftKey = useRef<string | null>(null);
   useEffect(() => {
-    if (!open) return;
-    if (game) {
-      setFormData(game);
-    } else {
-      setFormData({
-        name: '',
-        platform: defaultPlatform,
-        serial: '',
-        acquired: false,
-        priority: false
-      });
+    if (!open) {
+      draftKey.current = null;
+      return;
     }
-  }, [open, game, defaultPlatform]);
+
+    const currentKey = game?.id ?? 'new-game';
+    if (draftKey.current === currentKey) return;
+    draftKey.current = currentKey;
+
+    setFormData(game ?? {
+      name: '',
+      platform: defaultPlatform,
+      serial: '',
+      acquired: false,
+      priority: false
+    });
+    // defaultPlatform is intentionally omitted: it seeds a new draft but must
+    // never reset one that is already being edited.
+  }, [open, game]);
+
+  // Categories can finish loading after the dialog opens. Fill in the platform
+  // only while it is still unset, preserving every field the user has entered.
+  useEffect(() => {
+    if (!open || !defaultPlatform) return;
+    setFormData(prev => (prev.platform ? prev : { ...prev, platform: defaultPlatform }));
+  }, [open, defaultPlatform]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
