@@ -12,6 +12,11 @@ fi
 
 PUBLISHED_URL="https://${DEPLOYED_HOSTNAME}"
 
+# The Static Web App deploy action runs in a container that leaves the
+# workspace root root-owned, so the result file is written to the runner
+# temp directory instead.
+RESULT_FILE="${RESULT_FILE:-${RUNNER_TEMP:-.}/direct-publication-result.json}"
+
 jq -n \
   --arg runId "$GITHUB_RUN_ID" \
   --arg instanceId "$INSTANCE_ID" \
@@ -28,7 +33,7 @@ jq -n \
     staticWebAppName: $staticWebApp,
     storageAccountName: $storageAccount,
     diagnostics: [{code:"DIRECT_PUBLICATION_SUCCEEDED",message:"Static Web App published without edge routing"}]
-  }' > direct-publication-result.json
+  }' > "$RESULT_FILE"
 
 echo "publishedUrl=$PUBLISHED_URL" >> "$GITHUB_OUTPUT"
 echo "Published Static Web App URL: $PUBLISHED_URL" >> "$GITHUB_STEP_SUMMARY"

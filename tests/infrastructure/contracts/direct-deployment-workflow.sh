@@ -180,7 +180,11 @@ if [ -f "$DIRECT_WORKFLOW" ] && [ -f "$FRONT_DOOR_WORKFLOW" ]; then
   require_file_text "published URL is written to the workflow summary" \
     "$REPORT_SCRIPT" 'GITHUB_STEP_SUMMARY'
   require_file_text "publication result is retained" \
-    "$DIRECT_WORKFLOW" 'path: direct-publication-result.json'
+    "$DIRECT_WORKFLOW" 'path: ${{ runner.temp }}/direct-publication-result.json'
+  # The Static Web App deploy action leaves the workspace root root-owned, so
+  # the result file must be written outside it.
+  require_file_text "publication result is written outside the workspace" \
+    "$REPORT_SCRIPT" 'RESULT_FILE="${RESULT_FILE:-${RUNNER_TEMP:-.}/direct-publication-result.json}"'
   require_file_text "publication artifacts are retained on every outcome" \
     "$DIRECT_WORKFLOW" 'if: always()'
 
