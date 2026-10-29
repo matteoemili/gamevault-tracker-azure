@@ -1,3 +1,5 @@
+import xboxOneLogo from '@/assets/xbox-one-logo.svg';
+
 export type Platform = string;
 
 export interface Game {
@@ -22,7 +24,8 @@ export const PLATFORM_LOGOS: Record<string, string> = {
   PS3: 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/05/PlayStation_3_logo_%282009%29.svg/500px-PlayStation_3_logo_%282009%29.svg.png',
   PSP: 'https://upload.wikimedia.org/wikipedia/commons/0/0e/PSP_Logo.svg',
   PC: 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/38/Pc_game_logo.png/600px-Pc_game_logo.png',
-  XBOX: 'https://upload.wikimedia.org/wikipedia/commons/4/43/Xbox_Logo.svg'
+  XBOX: 'https://upload.wikimedia.org/wikipedia/commons/4/43/Xbox_Logo.svg',
+  XBOXONE: xboxOneLogo
 };
 
 export const PLATFORM_NAMES: Record<string, string> = {
@@ -31,5 +34,6 @@ export const PLATFORM_NAMES: Record<string, string> = {
   PS3: 'PlayStation 3',
   PSP: 'PlayStation Portable',
   PC: 'PC',
-  XBOX: 'Xbox'
+  XBOX: 'Xbox',
+  XBOXONE: 'Xbox One'
 };

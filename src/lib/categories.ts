@@ -1,4 +1,11 @@
-import { PlatformCategory } from '@/components/CategoryDialog';
+import type { PlatformCategory } from '@/components/CategoryDialog';
+import { PLATFORM_LOGOS, PLATFORM_NAMES } from '@/lib/types';
+
+export const XBOX_ONE_CATEGORY: PlatformCategory = {
+  id: 'XBOXONE',
+  name: PLATFORM_NAMES.XBOXONE,
+  logoUrl: PLATFORM_LOGOS.XBOXONE
+};
 
 export const DEFAULT_CATEGORIES: PlatformCategory[] = [
   {
@@ -30,5 +37,6 @@ export const DEFAULT_CATEGORIES: PlatformCategory[] = [
     id: 'XBOX',
     name: 'Xbox',
     logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/4/43/Xbox_Logo.svg'
-  }
+  },
+  XBOX_ONE_CATEGORY
 ];

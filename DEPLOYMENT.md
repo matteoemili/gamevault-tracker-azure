@@ -400,10 +400,48 @@ re-registered with `scripts/instance-route.sh register` and have its Table
 Storage CORS rules updated with `scripts/cors-add-origin.sh` for the new URL.
 Re-running the `ci-cd.yml` workflow per instance performs both steps.
 
+## Choosing a deployment pipeline
+
+Two parallel pipelines deploy identical instance infrastructure and application
+builds. They differ only in how the instance is published, and exactly one runs
+for any given event, selected by the `FRONT_DOOR_PUBLICATION_ENABLED`
+**repository variable**:
+
+| Variable value | Active workflow | Published address | Requires shared platform |
+|---|---|---|---|
+| unset / anything but `true` (default) | `.github/workflows/ci-cd-direct.yml` | `https://<swa-hostname>.azurestaticapps.net` | No |
+| `true` | `.github/workflows/ci-cd.yml` | `https://<endpoint>.azurefd.net` | Yes |
+
+Both workflows share the `instance-infrastructure-*` concurrency group, so they
+can never mutate the same instance resources at the same time.
+
+### Simplified pipeline (default)
+
+`ci-cd-direct.yml` is the lower-cost path and the right choice when no shared
+Front Door profile is deployed. It reuses the same scripts under
+`scripts/pipeline/infrastructure/` and `scripts/pipeline/application/`, then:
+
+1. Validates that the Static Web App upload landed on the expected hostname.
+2. Adds the actual deployed origin to Table Storage CORS with
+   `scripts/cors-add-origin.sh` (idempotently), which also covers pull-request
+   preview hostnames.
+3. Reports the Static Web App URL as the `publishedUrl` job output and in the
+   job summary, retaining `direct-publication-result.json` as an artifact.
+
+It never reads or mutates a Front Door profile, so it needs none of the
+platform resource-group or profile configuration below. Enabling the Front Door
+pipeline before its shared platform exists makes publication fail with
+`FRONT_DOOR_PROFILE_NOT_FOUND`.
+
+Contract coverage lives in
+`tests/infrastructure/contracts/direct-deployment-workflow.sh`, which also
+enforces that the two pipelines stay mutually exclusive.
+
 ## Automatic Front Door Publication
 
 The `publish_front_door` job in `.github/workflows/ci-cd.yml` publishes a
-successful instance without manual route changes. Configure these **repository
+successful instance without manual route changes. This workflow runs only when
+`FRONT_DOOR_PUBLICATION_ENABLED` is `true`. Configure these **repository
 variables** (values are environment-specific and must not contain secrets):
 
 | Environment | Platform resource group | Front Door profile |

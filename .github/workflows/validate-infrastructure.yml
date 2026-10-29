@@ -8,6 +8,7 @@ on:
       - 'tests/infrastructure/**'
       - '.github/workflows/validate-infrastructure.yml'
       - '.github/workflows/ci-cd.yml'
+      - '.github/workflows/ci-cd-direct.yml'
   push:
     branches: [main]
     paths:
@@ -15,6 +16,7 @@ on:
       - 'scripts/**'
       - 'tests/infrastructure/**'
       - '.github/workflows/ci-cd.yml'
+      - '.github/workflows/ci-cd-direct.yml'
   workflow_dispatch:
 
 jobs:

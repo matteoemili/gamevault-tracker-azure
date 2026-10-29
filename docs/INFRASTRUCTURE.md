@@ -264,7 +264,14 @@ Removes all infrastructure by deleting the resource group.
 
 ### Workflow Overview
 
-The GitHub Actions workflow (`.github/workflows/ci-cd.yml`) includes:
+Two parallel deployment workflows exist, selected by the
+`FRONT_DOOR_PUBLICATION_ENABLED` repository variable. When it is not `true`
+(the default), `.github/workflows/ci-cd-direct.yml` runs and publishes the
+Static Web App hostname directly; no shared Front Door platform is required.
+When it is `true`, `.github/workflows/ci-cd.yml` runs instead. See
+[DEPLOYMENT.md](../DEPLOYMENT.md) for the full comparison.
+
+The Front Door workflow (`.github/workflows/ci-cd.yml`) includes:
 
 1. **Infrastructure Deployment Job** (`deploy_infrastructure`)
    - Triggered on push, pull request, or manual dispatch

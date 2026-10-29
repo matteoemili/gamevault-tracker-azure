@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Trash, Plus, Pencil } from '@phosphor-icons/react';
 import { toast } from 'sonner';
+import { XBOX_ONE_CATEGORY } from '@/lib/categories';
 
 export interface PlatformCategory {
   id: string;
@@ -113,6 +114,16 @@ export function CategoryDialog({ open, onOpenChange, categories, onSave }: Categ
             <h3 className="font-semibold text-sm">
               {editingId ? 'Edit Category' : 'Add New Category'}
             </h3>
+            {!localCategories.some(category => category.id === XBOX_ONE_CATEGORY.id) && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setLocalCategories(prev => [...prev, { ...XBOX_ONE_CATEGORY }])}
+              >
+                <Plus className="mr-2" />
+                Add Xbox One
+              </Button>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="category-shortform">Platform Shortform</Label>

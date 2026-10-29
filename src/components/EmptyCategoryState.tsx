@@ -20,30 +20,34 @@ export function EmptyCategoryState({ platformId, platformName, onAddGame }: Empt
 
       {suggestions && (
         <div className="text-left mb-8 flex flex-col sm:flex-row gap-8">
-          <div className="flex-1">
-            <h3 className="text-xs font-semibold mb-3 text-muted-foreground uppercase tracking-wide">
-              Top Rated
-            </h3>
-            <ul className="space-y-1.5">
-              {suggestions.topRated.map((name) => (
-                <li key={name} className="text-sm">
-                  {name}
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div className="flex-1">
-            <h3 className="text-xs font-semibold mb-3 text-muted-foreground uppercase tracking-wide">
-              Most Collectible
-            </h3>
-            <ul className="space-y-1.5">
-              {suggestions.mostCollectible.map((name) => (
-                <li key={name} className="text-sm">
-                  {name}
-                </li>
-              ))}
-            </ul>
-          </div>
+          {suggestions.topRated.length > 0 && (
+            <div className="flex-1">
+              <h3 className="text-xs font-semibold mb-3 text-muted-foreground uppercase tracking-wide">
+                Top Rated
+              </h3>
+              <ul className="space-y-1.5">
+                {suggestions.topRated.map((name) => (
+                  <li key={name} className="text-sm">
+                    {name}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {suggestions.mostCollectible.length > 0 && (
+            <div className="flex-1">
+              <h3 className="text-xs font-semibold mb-3 text-muted-foreground uppercase tracking-wide">
+                Most Collectible
+              </h3>
+              <ul className="space-y-1.5">
+                {suggestions.mostCollectible.map((name) => (
+                  <li key={name} className="text-sm">
+                    {name}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
 

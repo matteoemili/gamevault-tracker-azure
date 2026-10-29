@@ -100,4 +100,12 @@ export const PLATFORM_SUGGESTIONS: Record<string, PlatformSuggestions> = {
       'Ninja Gaiden',
     ],
   },
+  XBOXONE: {
+    topRated: [
+      'Halo: The Master Chief Collection',
+      'Forza Horizon 4',
+      'Gears 5',
+    ],
+    mostCollectible: [],
+  },
 };

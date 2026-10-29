@@ -8,6 +8,7 @@
         "kill": "fuser -k 5000/tcp",
         "build": "tsc -b --noCheck && vite build",
         "lint": "eslint .",
+        "test:app": "node --test tests/application/*.test.mjs",
         "optimize": "vite optimize",
         "preview": "vite preview",
         "infra:platform:build": "az bicep build --file infra/platform/main.bicep --stdout > /dev/null",
