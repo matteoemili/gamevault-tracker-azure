@@ -1,5 +1,24 @@
 # Platform Shortform Management
 
+## Xbox One
+
+- Xbox One uses the shortform `XBOXONE`, separate from `XBOX` (the original Xbox).
+- New collections include Xbox One by default. For an existing collection, open
+  **Manage Categories**, click **Add Xbox One**, then save. Existing categories
+  and game records are left unchanged.
+- Select Xbox One with no search query and the **All** status filter to see three
+  example suggestions: Halo: The Master Chief Collection, Forza Horizon 4, and
+  Gears 5. These are suggestions only, not saved games, owned titles, or a claim
+  about current Game Pass availability.
+- **Add Your First Xbox One Game** opens the game form with Xbox One selected.
+  Games use the same tracking and CSV import/export features as other platforms;
+  use `XBOXONE` in the CSV Platform column.
+- Xbox One cover art currently uses the neutral placeholder, like other platforms
+  without a configured serial-based cover source.
+
+Run `npm run test:app` for platform metadata, suggestions, CSV round-trip, and
+cover fallback regression tests.
+
 ## Changes Made
 
 The `CategoryDialog` component has been updated to allow viewing and editing platform shortforms (the `id` field of categories).

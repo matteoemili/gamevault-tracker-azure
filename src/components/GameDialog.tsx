@@ -19,10 +19,12 @@ interface GameDialogProps {
   onSave: (game: Game) => void;
   game?: Game;
   categories: PlatformCategory[];
+  initialPlatform?: Platform;
 }
 
-export function GameDialog({ open, onOpenChange, onSave, game, categories }: GameDialogProps) {
-  const defaultPlatform = categories.length > 0 ? categories[0].id : '';
+export function GameDialog({ open, onOpenChange, onSave, game, categories, initialPlatform }: GameDialogProps) {
+  const defaultPlatform = categories.find(category => category.id === initialPlatform)?.id
+    ?? categories[0]?.id ?? '';
   const [formData, setFormData] = useState<Partial<Game>>(
     game || {
       name: '',
@@ -34,12 +36,19 @@ export function GameDialog({ open, onOpenChange, onSave, game, categories }: Gam
   );
 
   useEffect(() => {
+    if (!open) return;
     if (game) {
       setFormData(game);
-    } else if (!formData.platform && defaultPlatform) {
-      setFormData(prev => ({ ...prev, platform: defaultPlatform }));
+    } else {
+      setFormData({
+        name: '',
+        platform: defaultPlatform,
+        serial: '',
+        acquired: false,
+        priority: false
+      });
     }
-  }, [game, defaultPlatform]);
+  }, [open, game, defaultPlatform]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

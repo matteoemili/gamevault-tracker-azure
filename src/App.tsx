@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Game, Platform } from '@/lib/types';
 import { GameCard } from '@/components/GameCard';
+import { EmptyCategoryState } from '@/components/EmptyCategoryState';
 import { GameDialog } from '@/components/GameDialog';
 import { ImportExportMenu } from '@/components/ImportExportMenu';
 import { PlatformCategory } from '@/components/CategoryDialog';
@@ -170,6 +171,10 @@ function App() {
   }, [games]);
 
   const catList = categories || DEFAULT_CATEGORIES;
+  const emptyCategory = !gamesLoading && !categoriesLoading && !searchQuery && statusFilter === 'all'
+    && platformFilter !== 'all' && platformCounts[platformFilter] === 0
+    ? catList.find(category => category.id === platformFilter)
+    : undefined;
 
   const gridClass = theme === 'dashboard-pro'
     ? 'grid grid-cols-1 lg:grid-cols-2 gap-2'
@@ -414,7 +419,13 @@ function App() {
         paddingTop: '24px',
         paddingBottom: '48px',
       }}>
-        {filteredGames.length === 0 ? (
+        {emptyCategory ? (
+          <EmptyCategoryState
+            platformId={emptyCategory.id}
+            platformName={emptyCategory.name}
+            onAddGame={handleAddNew}
+          />
+        ) : filteredGames.length === 0 ? (
           <div className="text-center py-20">
             {(games?.length || 0) === 0 ? (
               <div className="max-w-sm mx-auto">
@@ -456,7 +467,7 @@ function App() {
         )}
       </main>
 
-      <GameDialog open={dialogOpen} onOpenChange={handleDialogClose} onSave={handleSaveGame} game={editingGame} categories={catList} />
+      <GameDialog open={dialogOpen} onOpenChange={handleDialogClose} onSave={handleSaveGame} game={editingGame} categories={catList} initialPlatform={platformFilter === 'all' ? undefined : platformFilter} />
     </div>
   );
 }
